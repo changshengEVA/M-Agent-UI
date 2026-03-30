@@ -4,9 +4,10 @@ import { ThinkingPanel } from "./components/ThinkingPanel";
 import { ThreadSidebar } from "./components/ThreadSidebar";
 import { ParticleBackground } from "./components/ParticleBackground";
 import { Message, ThinkingLog, ThreadState, ChatRun, HistoryRound } from "./types/chat";
-import { chatApi } from "./services/api";
+import { chatApi, API_BASE, updateApiBase } from "./services/api";
 import { motion, AnimatePresence } from "motion/react";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, X, Settings } from "lucide-react";
+import { SettingsModal } from "./components/SettingsModal";
 
 const DEFAULT_THREAD_ID = "demo-thread-1";
 
@@ -14,12 +15,18 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [isFlushing, setIsFlushing] = useState(false);
+  const [flushStatus, setFlushStatus] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [threadId, setThreadId] = useState(DEFAULT_THREAD_ID);
   const [threadState, setThreadState] = useState<ThreadState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [currentApiUrl, setCurrentApiUrl] = useState(API_BASE);
   
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventAbortControllerRef = useRef<AbortController | null>(null);
+  const threadAbortControllerRef = useRef<AbortController | null>(null);
 
   // Check backend health
   const checkHealth = useCallback(async () => {
@@ -34,6 +41,90 @@ export default function App() {
   }, []);
 
   // Fetch thread state on mount and thread change
+  const setupThreadEventSource = useCallback((id: string) => {
+    if (threadAbortControllerRef.current) {
+      threadAbortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    threadAbortControllerRef.current = controller;
+
+    console.log(`[SSE] Connecting to thread events: ${id}`);
+    const url = chatApi.getThreadEventsUrl(id);
+    
+    const startThreadStream = async () => {
+      try {
+        console.log(`[SSE] Connecting to thread events: ${url}`);
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "Accept": "text/event-stream",
+            "ngrok-skip-browser-warning": "true"
+          },
+          mode: 'cors',
+          cache: 'no-store'
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            console.warn(`[SSE] Thread events not found (404), might be a new thread.`);
+            return;
+          }
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        if (!response.body) return;
+        setIsBackendOnline(true);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const jsonStr = line.replace("data: ", "").trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              handleSSEEvent(event);
+            } catch (e) {
+              console.error("解析线程事件失败:", e, jsonStr);
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log(`[SSE] Thread stream aborted for: ${id}`);
+          return;
+        }
+        console.error("线程事件流连接失败:", err);
+        
+        // If it's a network error, it might be CORS or connectivity
+        if (err.message === "Failed to fetch" || err.name === "TypeError") {
+          setIsBackendOnline(false);
+          setError("网络连接错误: 无法连接到后端 API。请检查 API 地址是否正确，或后端是否已启动。");
+        }
+
+        // Retry after delay
+        setTimeout(() => {
+          if (!controller.signal.aborted) {
+            setupThreadEventSource(id);
+          }
+        }, 10000); // Increase retry delay to 10s
+      }
+    };
+
+    startThreadStream();
+  }, []);
+
   const fetchThreadState = useCallback(async () => {
     try {
       const state = await chatApi.getThreadState(threadId);
@@ -68,12 +159,20 @@ export default function App() {
   useEffect(() => {
     checkHealth();
     fetchThreadState();
+    setupThreadEventSource(threadId);
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      if (eventAbortControllerRef.current) {
+        eventAbortControllerRef.current.abort();
+      }
+      if (threadAbortControllerRef.current) {
+        threadAbortControllerRef.current.abort();
       }
     };
-  }, [fetchThreadState]);
+  }, [fetchThreadState, setupThreadEventSource, threadId]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   const addThinkingLog = (type: string, message: string, data?: any) => {
     setThinkingLogs(prev => [
@@ -105,13 +204,25 @@ export default function App() {
       const run = await chatApi.createRun(threadId, content);
       addThinkingLog("run_started", `任务已启动: ${run.run_id}`);
       
+      if (eventAbortControllerRef.current) {
+        eventAbortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      eventAbortControllerRef.current = controller;
+
       // 使用 fetch 替代 EventSource 以支持 Header
       const response = await fetch(chatApi.getEventsUrl(run.run_id), {
+        signal: controller.signal,
         headers: {
           "Accept": "text/event-stream",
           "ngrok-skip-browser-warning": "true"
-        }
+        },
+        mode: 'cors'
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       if (!response.body) throw new Error("无法读取事件流");
       console.log(`[SSE] Stream connected, starting reader...`);
@@ -185,6 +296,24 @@ export default function App() {
         // Also fetch state to update buffer/history
         fetchThreadState();
         break;
+      case "flush_started":
+        console.log(`[SSE] Flush started`, payload);
+        setIsFlushing(true);
+        setFlushStatus("FLUSH_STARTED");
+        addThinkingLog(type, "Memory Flush Started", payload);
+        break;
+      case "flush_stage":
+        console.log(`[SSE] Flush stage: ${payload.stage} - ${payload.status}`, payload);
+        setFlushStatus(`${payload.stage}:${payload.status}`);
+        addThinkingLog(type, `Flush Stage: ${payload.stage} (${payload.status})`, payload);
+        break;
+      case "flush_completed":
+        console.log(`[SSE] Flush completed`, payload);
+        setIsFlushing(false);
+        setFlushStatus(null);
+        addThinkingLog(type, "Memory Flush Completed", payload);
+        fetchThreadState();
+        break;
       case "thread_state_updated":
         console.log(`[SSE] Thread state updated`, payload);
         setThreadState(prev => prev ? { ...prev, ...payload } : payload);
@@ -211,11 +340,13 @@ export default function App() {
 
   const handleFlush = async () => {
     try {
+      setIsFlushing(true);
+      setFlushStatus("INITIATING");
       await chatApi.flushBuffer(threadId);
-      // Add a small delay to ensure backend has updated its state
-      setTimeout(() => fetchThreadState(), 500);
     } catch (err) {
       setError("Failed to flush buffer.");
+      setIsFlushing(false);
+      setFlushStatus(null);
     }
   };
 
@@ -230,6 +361,10 @@ export default function App() {
     }
   };
 
+  const handleToggleTheme = () => {
+    setTheme(prev => prev === "dark" ? "light" : "dark");
+  };
+
   const handleNewThread = () => {
     const newId = `thread-${Math.random().toString(36).substring(7)}`;
     setThreadId(newId);
@@ -242,13 +377,30 @@ export default function App() {
     addThinkingLog("history_recall", `Inspecting round: ${round.round_id}`, round);
   };
 
+  const handleRetry = () => {
+    setIsBackendOnline(null);
+    setError(null);
+    checkHealth();
+    fetchThreadState();
+    setupThreadEventSource(threadId);
+  };
+
+  const handleUpdateApiUrl = (newUrl: string) => {
+    updateApiBase(newUrl);
+    setCurrentApiUrl(newUrl);
+    handleRetry();
+  };
+
   return (
     <div className="flex h-screen w-full text-zinc-200 overflow-hidden font-sans selection:bg-cyan-500/30 relative">
-      <ParticleBackground />
+      <ParticleBackground theme={theme} />
       <ThreadSidebar 
         threadState={threadState} 
         onNewThread={handleNewThread}
         onSelectRound={handleSelectRound}
+        isFlushing={isFlushing}
+        flushStatus={flushStatus}
+        theme={theme}
       />
       
       <main className="flex-1 flex flex-col relative">
@@ -256,10 +408,15 @@ export default function App() {
           messages={messages}
           onSendMessage={handleSendMessage}
           isThinking={isThinking}
+          isFlushing={isFlushing}
           threadState={threadState}
           onFlush={handleFlush}
           onToggleMode={handleToggleMode}
+          onToggleTheme={handleToggleTheme}
+          onRetry={handleRetry}
+          theme={theme}
           isBackendOnline={isBackendOnline}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         <AnimatePresence>
@@ -272,7 +429,15 @@ export default function App() {
             >
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-5 h-5 text-rose-500" />
-                <span className="text-sm font-mono">{error}</span>
+                <div className="flex flex-col">
+                  <span className="text-sm font-mono">{error}</span>
+                  <button 
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="text-[10px] text-cyan-400 hover:underline text-left mt-1 uppercase tracking-widest"
+                  >
+                    Update API URL &rarr;
+                  </button>
+                </div>
                 <button 
                   onClick={() => setError(null)}
                   className="ml-auto p-1 hover:bg-rose-500/20 rounded-full transition-colors"
@@ -281,7 +446,7 @@ export default function App() {
                 </button>
               </div>
               <a 
-                href="https://unfriended-firefly-newton.ngrok-free.dev" 
+                href={currentApiUrl} 
                 target="_blank" 
                 rel="noreferrer"
                 className="text-[10px] uppercase tracking-widest text-cyan-400 hover:underline ml-8"
@@ -293,7 +458,15 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <ThinkingPanel logs={thinkingLogs} isThinking={isThinking} />
+      <ThinkingPanel logs={thinkingLogs} isThinking={isThinking} theme={theme} />
+
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)}
+        apiUrl={currentApiUrl}
+        onSave={handleUpdateApiUrl}
+        theme={theme}
+      />
     </div>
   );
 }

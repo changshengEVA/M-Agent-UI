@@ -1,5 +1,5 @@
 {
-  "name": "M-Agent Terminal",
-  "description": "A sci-fi themed interface for the M-Agent Chat API, featuring real-time thinking process visualization and memory management.",
+  "name": "CSE Particle Animation",
+  "description": "A dynamic particle animation forming the letters 'CSE' with random walk behavior and interactive mouse effects.",
   "requestFramePermissions": []
 }

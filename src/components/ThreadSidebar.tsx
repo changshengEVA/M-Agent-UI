@@ -11,21 +11,43 @@ interface ThreadSidebarProps {
   threadState: ThreadState | null;
   onNewThread: () => void;
   onSelectRound: (round: HistoryRound) => void;
+  isFlushing: boolean;
+  flushStatus: string | null;
+  theme: "dark" | "light";
 }
 
 export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({ 
   threadState, 
   onNewThread,
-  onSelectRound
+  onSelectRound,
+  isFlushing,
+  flushStatus,
+  theme
 }) => {
   return (
-    <div className="flex flex-col h-full bg-[#0A0A0A]/95 border-r border-[#1A1A1A] w-64 font-mono text-[11px] backdrop-blur-none">
-      <div className="p-4 border-b border-[#1A1A1A]">
+    <div className={cn(
+      "flex flex-col h-full border-r font-mono text-[11px] backdrop-blur-none transition-colors duration-300 w-64",
+      theme === 'dark' ? "bg-[#0A0A0A]/95 border-[#1A1A1A]" : "bg-white border-zinc-200"
+    )}>
+      <div className={cn(
+        "p-4 border-b transition-colors",
+        theme === 'dark' ? "border-[#1A1A1A]" : "border-zinc-200"
+      )}>
         <button 
           onClick={onNewThread}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-sm bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-bold uppercase tracking-widest hover:bg-cyan-500/20 transition-all group"
+          disabled={isFlushing || (threadState?.pending_rounds || 0) > 0}
+          className={cn(
+            "w-full flex items-center justify-center gap-2 py-2 rounded-sm font-bold uppercase tracking-widest transition-all group",
+            (isFlushing || (threadState?.pending_rounds || 0) > 0)
+              ? "bg-zinc-500/10 border-zinc-500/20 text-zinc-500 cursor-not-allowed opacity-50"
+              : "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20"
+          )}
+          title={(isFlushing || (threadState?.pending_rounds || 0) > 0) ? "Please wait until the buffer is flushed before starting a new thread" : "Start a new conversation"}
         >
-          <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+          <Plus className={cn(
+            "w-4 h-4 transition-transform",
+            !(isFlushing || (threadState?.pending_rounds || 0) > 0) && "group-hover:rotate-90"
+          )} />
           New Thread
         </button>
       </div>
@@ -38,13 +60,25 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
             Session Metrics
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="p-2 bg-zinc-900/50 border border-zinc-800 rounded-sm text-center">
+            <div className={cn(
+              "p-2 border rounded-sm text-center transition-colors",
+              theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200"
+            )}>
               <div className="text-zinc-600 uppercase text-[8px]">Rounds</div>
-              <div className="text-zinc-200 font-bold">{threadState?.history_rounds || 0}</div>
+              <div className={cn(
+                "font-bold transition-colors",
+                theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
+              )}>{threadState?.history_rounds || 0}</div>
             </div>
-            <div className="p-2 bg-zinc-900/50 border border-zinc-800 rounded-sm text-center">
+            <div className={cn(
+              "p-2 border rounded-sm text-center transition-colors",
+              theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200"
+            )}>
               <div className="text-zinc-600 uppercase text-[8px]">Pending</div>
-              <div className="text-zinc-200 font-bold">{threadState?.pending_rounds || 0}</div>
+              <div className={cn(
+                "font-bold transition-colors",
+                theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
+              )}>{threadState?.pending_rounds || 0}</div>
             </div>
           </div>
         </div>
@@ -64,7 +98,12 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
                   key={round.round_id}
                   whileHover={{ x: 4 }}
                   onClick={() => onSelectRound(round)}
-                  className="w-full text-left p-2 rounded-sm bg-zinc-900/30 border border-zinc-800/50 hover:border-cyan-900/50 hover:bg-cyan-950/10 transition-all group"
+                  className={cn(
+                    "w-full text-left p-2 rounded-sm border transition-all group",
+                    theme === 'dark' 
+                      ? "bg-zinc-900/30 border-zinc-800/50 hover:border-cyan-900/50 hover:bg-cyan-950/10" 
+                      : "bg-zinc-50 border-zinc-200 hover:border-cyan-500/50 hover:bg-cyan-50"
+                  )}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className={cn(
@@ -77,7 +116,10 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
                       {new Date(round.user_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <p className="text-zinc-400 line-clamp-1 group-hover:text-zinc-200 transition-colors">{round.user_message}</p>
+                  <p className={cn(
+                    "line-clamp-1 transition-colors",
+                    theme === 'dark' ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-600 group-hover:text-zinc-900"
+                  )}>{round.user_message}</p>
                 </motion.button>
               ))
             )}
@@ -86,11 +128,19 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
 
         {/* Buffer Vial Visualization */}
         <div className="pt-4 border-t border-zinc-900">
-          <BufferVial pendingCount={threadState?.pending_rounds || 0} />
+          <BufferVial 
+            pendingCount={threadState?.pending_rounds || 0} 
+            isFlushing={isFlushing}
+            flushStatus={flushStatus}
+            theme={theme}
+          />
         </div>
       </div>
 
-      <div className="p-4 border-t border-[#1A1A1A] bg-[#050505] space-y-2">
+      <div className={cn(
+        "p-4 border-t transition-colors",
+        theme === 'dark' ? "border-[#1A1A1A] bg-[#050505]" : "border-zinc-200 bg-zinc-50"
+      )}>
         <div className="flex items-center justify-between text-[9px] text-zinc-600 uppercase">
           <span>Last Activity</span>
           <span>

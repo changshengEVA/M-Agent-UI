@@ -1,7 +1,20 @@
 import { ChatRun, ThreadState } from "../types/chat";
 
-// 优先从环境变量读取，如果没有则使用您提供的 ngrok 地址
-const API_BASE = (import.meta as any).env.VITE_AGENT_API_URL || "https://unfriended-firefly-newton.ngrok-free.dev";
+// 优先从 localStorage 读取，其次从环境变量读取，最后使用默认值
+const getApiBase = () => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("VITE_AGENT_API_URL");
+    if (saved) return saved;
+  }
+  return (import.meta as any).env.VITE_AGENT_API_URL || "https://unfriended-firefly-newton.ngrok-free.dev";
+};
+
+export let API_BASE = getApiBase();
+
+export const updateApiBase = (newUrl: string) => {
+  API_BASE = newUrl;
+  localStorage.setItem("VITE_AGENT_API_URL", newUrl);
+};
 
 // 这里的 headers 包含绕过 ngrok 警告的必要字段
 const getHeaders = () => ({
@@ -82,8 +95,10 @@ export const chatApi = {
     const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/mode`, {
       method: "POST",
       headers: getHeaders(),
+      mode: 'cors',
       body: JSON.stringify({ mode, discard_pending: discardPending }),
     });
+    if (!res.ok) throw new Error(`设置记忆模式失败: ${res.statusText}`);
     return res.json();
   },
 
@@ -91,12 +106,18 @@ export const chatApi = {
     const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/flush`, {
       method: "POST",
       headers: getHeaders(),
+      mode: 'cors',
       body: JSON.stringify({ reason }),
     });
+    if (!res.ok) throw new Error(`刷新缓存失败: ${res.statusText}`);
     return res.json();
   },
 
   getEventsUrl(runId: string) {
     return `${API_BASE}/v1/chat/runs/${runId}/events`;
+  },
+
+  getThreadEventsUrl(threadId: string) {
+    return `${API_BASE}/v1/chat/threads/${threadId}/events?after_seq=-1`;
   }
 };

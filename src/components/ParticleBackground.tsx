@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from "react";
 
-export const ParticleBackground: React.FC = () => {
+interface ParticleBackgroundProps {
+  theme: "dark" | "light";
+}
+
+export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -27,77 +31,84 @@ export const ParticleBackground: React.FC = () => {
       size: number;
       density: number;
       color: string;
+      vx: number;
+      vy: number;
 
       constructor(x: number, y: number) {
-        this.x = Math.random() * canvas!.width;
-        this.y = Math.random() * canvas!.height;
+        this.x = x + (Math.random() - 0.5) * 100;
+        this.y = y + (Math.random() - 0.5) * 100;
         this.baseX = x;
         this.baseY = y;
-        this.size = Math.random() * 1.5 + 1.0; // Slightly larger for clarity
-        this.density = (Math.random() * 30) + 1;
-        this.color = `rgba(34, 211, 238, ${Math.random() * 0.7 + 0.3})`; // More solid colors
+        this.size = Math.random() * 1.2 + 0.8;
+        this.density = (Math.random() * 20) + 5;
+        this.vx = (Math.random() - 0.5) * 2;
+        this.vy = (Math.random() - 0.5) * 2;
+        
+        const cyan = theme === "dark" ? "34, 211, 238" : "8, 145, 178";
+        this.color = `rgba(${cyan}, ${Math.random() * 0.5 + 0.3})`;
       }
 
       draw() {
-        ctx!.shadowBlur = 0; // Completely sharp, no glow
-        ctx!.shadowColor = "transparent";
         ctx!.fillStyle = this.color;
         ctx!.beginPath();
         ctx!.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx!.closePath();
         ctx!.fill();
-        ctx!.shadowBlur = 0;
       }
 
       update() {
-        let dx = mouse.x - this.x;
-        let dy = mouse.y - this.y;
-        let distance = Math.sqrt(dx * dx + dy * dy);
-        let forceDirectionX = dx / distance;
-        let forceDirectionY = dy / distance;
-        let maxDistance = mouse.radius;
-        let force = (maxDistance - distance) / maxDistance;
-        let directionX = forceDirectionX * force * this.density;
-        let directionY = forceDirectionY * force * this.density;
+        // Random walk component
+        this.vx += (Math.random() - 0.5) * 0.2;
+        this.vy += (Math.random() - 0.5) * 0.2;
+        
+        // Damping
+        this.vx *= 0.95;
+        this.vy *= 0.95;
 
+        // Restoring force (spring)
+        const dxBase = this.baseX - this.x;
+        const dyBase = this.baseY - this.y;
+        this.vx += dxBase * 0.01;
+        this.vy += dyBase * 0.01;
+
+        // Mouse interaction
+        let dxMouse = mouse.x - this.x;
+        let dyMouse = mouse.y - this.y;
+        let distance = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
+        
         if (distance < mouse.radius) {
-          this.x -= directionX;
-          this.y -= directionY;
-        } else {
-          if (this.x !== this.baseX) {
-            let dx = this.x - this.baseX;
-            this.x -= dx / 10;
-          }
-          if (this.y !== this.baseY) {
-            let dy = this.y - this.baseY;
-            this.y -= dy / 10;
-          }
+          let force = (mouse.radius - distance) / mouse.radius;
+          let forceDirectionX = dxMouse / distance;
+          let forceDirectionY = dyMouse / distance;
+          this.vx -= forceDirectionX * force * 5;
+          this.vy -= forceDirectionY * force * 5;
         }
+
+        this.x += this.vx;
+        this.y += this.vy;
       }
     }
 
     const init = () => {
       particles = [];
       ctx.fillStyle = "white";
-      ctx.font = "bold 120px Arial"; // Even larger font for more particles
+      ctx.font = "bold 120px Arial";
       const text = "CSE";
       const metrics = ctx.measureText(text);
       const textWidth = Math.ceil(metrics.width);
       const textHeight = 150;
       
-      // Clear a small area to draw text
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillText(text, 0, 100);
       const textCoordinates = ctx.getImageData(0, 0, textWidth, textHeight);
 
-      // Scale and center the text on the main canvas
       const scale = Math.min(canvas.width, canvas.height) / 400;
       const offsetX = (canvas.width - textWidth * scale) / 2;
       const offsetY = (canvas.height - textHeight * scale) / 2;
 
-      // Scan every pixel for maximum density
-      for (let y = 0; y < textCoordinates.height; y++) {
-        for (let x = 0; x < textCoordinates.width; x++) {
+      // Sample every 3rd pixel for performance and a "cloudy" look
+      for (let y = 0; y < textCoordinates.height; y += 3) {
+        for (let x = 0; x < textCoordinates.width; x += 3) {
           if (textCoordinates.data[(y * 4 * textCoordinates.width) + (x * 4) + 3] > 128) {
             let positionX = x * scale + offsetX;
             let positionY = y * scale + offsetY;
@@ -135,7 +146,9 @@ export const ParticleBackground: React.FC = () => {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-[-1] opacity-100 bg-[#050505]"
+      className={`fixed inset-0 pointer-events-none z-[-1] opacity-100 transition-colors duration-300 ${
+        theme === "dark" ? "bg-[#050505]" : "bg-[#f4f4f5]"
+      }`}
     />
   );
 };

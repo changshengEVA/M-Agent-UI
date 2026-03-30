@@ -7,10 +7,34 @@
   --font-display: "Space Grotesk", sans-serif;
 }
 
+:root {
+  --bg-app: #050505;
+  --bg-sidebar: #0A0A0A;
+  --bg-panel: #050505;
+  --text-primary: #e4e4e7;
+  --text-secondary: #71717a;
+  --border-color: #1A1A1A;
+  --accent-color: #06b6d4;
+  --accent-glow: rgba(6, 182, 212, 0.2);
+}
+
+[data-theme="light"] {
+  --bg-app: #f4f4f5;
+  --bg-sidebar: #ffffff;
+  --bg-panel: #f4f4f5;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --border-color: #e4e4e7;
+  --accent-color: #0891b2;
+  --accent-glow: rgba(8, 145, 178, 0.1);
+}
+
 @layer base {
   body {
-    @apply bg-[#050505] text-zinc-200 antialiased overflow-hidden;
-    background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    @apply antialiased overflow-hidden transition-colors duration-300;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
     background-size: 100% 2px, 3px 100%;
   }
 }

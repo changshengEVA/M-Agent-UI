@@ -7,6 +7,7 @@ import { cn } from "../lib/utils";
 interface ThinkingPanelProps {
   logs: ThinkingLog[];
   isThinking: boolean;
+  theme: "dark" | "light";
 }
 
 const getIcon = (type: string) => {
@@ -31,7 +32,7 @@ const getLogColor = (type: string) => {
   return "text-zinc-400 border-zinc-800 bg-zinc-900/50";
 };
 
-const LogItem = ({ log }: { log: ThinkingLog }) => {
+const LogItem = ({ log, theme }: { log: ThinkingLog, theme: "dark" | "light" }) => {
   const [isExpanded, setIsExpanded] = React.useState(false);
 
   return (
@@ -40,7 +41,7 @@ const LogItem = ({ log }: { log: ThinkingLog }) => {
       animate={{ opacity: 1, x: 0 }}
       className={cn(
         "p-2 border rounded-sm transition-colors",
-        getLogColor(log.type)
+        theme === 'dark' ? getLogColor(log.type) : "bg-zinc-50 border-zinc-200 text-zinc-700"
       )}
     >
       <div className="flex items-center gap-2 mb-1">
@@ -78,7 +79,7 @@ const LogItem = ({ log }: { log: ThinkingLog }) => {
   );
 };
 
-export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({ logs, isThinking }) => {
+export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({ logs, isThinking, theme }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,8 +89,14 @@ export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({ logs, isThinking }
   }, [logs]);
 
   return (
-    <div className="flex flex-col h-full bg-[#050505]/95 border-l border-[#1A1A1A] w-80 font-mono text-[11px] backdrop-blur-none">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1A1A1A] bg-[#0A0A0A]/40">
+    <div className={cn(
+      "flex flex-col h-full border-l font-mono text-[11px] backdrop-blur-none transition-colors duration-300 w-80",
+      theme === 'dark' ? "bg-[#050505]/95 border-[#1A1A1A]" : "bg-white border-zinc-200"
+    )}>
+      <div className={cn(
+        "flex items-center justify-between px-4 py-3 border-b transition-colors",
+        theme === 'dark' ? "border-[#1A1A1A] bg-[#0A0A0A]/40" : "border-zinc-200 bg-zinc-50"
+      )}>
         <div className="flex items-center gap-2 text-zinc-400">
           <Terminal className="w-4 h-4" />
           <span className="uppercase tracking-widest font-bold">Process Monitor</span>
@@ -115,13 +122,16 @@ export const ThinkingPanel: React.FC<ThinkingPanelProps> = ({ logs, isThinking }
             </div>
           ) : (
             logs.map((log) => (
-              <LogItem key={log.id} log={log} />
+              <LogItem key={log.id} log={log} theme={theme} />
             ))
           )}
         </AnimatePresence>
       </div>
 
-      <div className="p-3 border-t border-[#1A1A1A] bg-[#0A0A0A] text-zinc-500 flex items-center justify-between">
+      <div className={cn(
+        "p-3 border-t transition-colors",
+        theme === 'dark' ? "border-[#1A1A1A] bg-[#0A0A0A] text-zinc-500" : "border-zinc-200 bg-zinc-50 text-zinc-600"
+      )}>
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
           <span>Kernel: Active</span>
