@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, Trash2, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, Trash2, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut } from "lucide-react";
 import { Message, ThreadState } from "../types/chat";
 import { cn } from "../lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -16,8 +16,10 @@ interface ChatInterfaceProps {
   onToggleTheme: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
+  onLogout: () => void;
   theme: "dark" | "light";
   isBackendOnline: boolean | null;
+  authLabel?: string;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -31,8 +33,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onToggleTheme,
   onRetry,
   onOpenSettings,
+  onLogout,
   theme,
-  isBackendOnline
+  isBackendOnline,
+  authLabel
 }) => {
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -73,6 +77,12 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <Database className="w-3 h-3" />
                 Thread: {threadState?.thread_id || "initializing..."}
               </span>
+              {authLabel && (
+                <>
+                  <span className="opacity-20">|</span>
+                  <span>User: {authLabel}</span>
+                </>
+              )}
               <span className="opacity-20">|</span>
               <button 
                 onClick={onToggleMode}
@@ -121,6 +131,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )}
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={onLogout}
+            className={cn(
+              "p-1.5 rounded-sm border transition-colors",
+              theme === 'dark' ? "border-zinc-800 text-zinc-400 hover:text-rose-400" : "border-zinc-200 text-zinc-500 hover:text-rose-600"
+            )}
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

@@ -1,116 +1,190 @@
-import { ChatRun, ThreadState } from "../types/chat";
+import { AuthLoginResponse, AuthUser, ChatRun, ThreadState } from "../types/chat";
 
-// 优先从 localStorage 读取，其次从环境变量读取，最后使用默认值
+const API_URL_STORAGE_KEY = "VITE_AGENT_API_URL";
+const AUTH_TOKEN_STORAGE_KEY = "M_AGENT_AUTH_TOKEN";
+
 const getApiBase = () => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("VITE_AGENT_API_URL");
+    const saved = localStorage.getItem(API_URL_STORAGE_KEY);
     if (saved) return saved;
   }
-  return (import.meta as any).env.VITE_AGENT_API_URL || "https://unfriended-firefly-newton.ngrok-free.dev";
+  return (import.meta as any).env.VITE_AGENT_API_URL || "http://127.0.0.1:8777";
+};
+
+const getStoredAuthToken = () => {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || "";
 };
 
 export let API_BASE = getApiBase();
+let AUTH_TOKEN = getStoredAuthToken();
 
 export const updateApiBase = (newUrl: string) => {
   API_BASE = newUrl;
-  localStorage.setItem("VITE_AGENT_API_URL", newUrl);
+  localStorage.setItem(API_URL_STORAGE_KEY, newUrl);
 };
 
-// 这里的 headers 包含绕过 ngrok 警告的必要字段
-const getHeaders = () => ({
-  "Content-Type": "application/json",
-  "ngrok-skip-browser-warning": "true", 
-});
+export const setAuthToken = (token: string) => {
+  AUTH_TOKEN = String(token || "").trim();
+  if (AUTH_TOKEN) {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, AUTH_TOKEN);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+};
+
+export const getAuthToken = () => AUTH_TOKEN;
+
+export const clearAuthToken = () => {
+  AUTH_TOKEN = "";
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+};
+
+const buildHeaders = ({
+  withContentType = true,
+  withAuth = false,
+}: {
+  withContentType?: boolean;
+  withAuth?: boolean;
+} = {}) => {
+  const headers: Record<string, string> = {
+    "ngrok-skip-browser-warning": "true",
+  };
+  if (withContentType) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (withAuth && AUTH_TOKEN) {
+    headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+  }
+  return headers;
+};
+
+const parseResponseError = async (res: Response) => {
+  let detail = res.statusText;
+  try {
+    const payload = await res.json();
+    detail = String(payload?.error || payload?.message || detail);
+  } catch {
+    // ignore
+  }
+  return new Error(`[${res.status}] ${detail}`);
+};
+
+async function parseJsonOrThrow<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    throw await parseResponseError(res);
+  }
+  return (await res.json()) as T;
+}
 
 export const chatApi = {
   async healthCheck() {
-    console.log(`[API] Checking health at: ${API_BASE}/healthz`);
-    try {
-      const res = await fetch(`${API_BASE}/healthz`, { 
-        headers: getHeaders(),
-        mode: 'cors' 
-      });
-      const data = await res.json();
-      console.log(`[API] Health check response:`, data);
-      return data;
-    } catch (error) {
-      console.error(`[API] Health check failed:`, error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/healthz`, {
+      headers: buildHeaders(),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<any>(res);
+  },
+
+  async register(username: string, password: string, role: "basic" | "advanced" = "basic") {
+    const res = await fetch(`${API_BASE}/v1/auth/register`, {
+      method: "POST",
+      headers: buildHeaders(),
+      mode: "cors",
+      body: JSON.stringify({ username, password, role }),
+    });
+    return parseJsonOrThrow<any>(res);
+  },
+
+  async login(username: string, password: string): Promise<AuthLoginResponse> {
+    const res = await fetch(`${API_BASE}/v1/auth/login`, {
+      method: "POST",
+      headers: buildHeaders(),
+      mode: "cors",
+      body: JSON.stringify({ username, password }),
+    });
+    const payload = await parseJsonOrThrow<AuthLoginResponse>(res);
+    setAuthToken(payload.access_token);
+    return payload;
+  },
+
+  async me(): Promise<{ user: AuthUser | null }> {
+    const res = await fetch(`${API_BASE}/v1/auth/me`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<{ user: AuthUser | null }>(res);
+  },
+
+  async logout() {
+    const res = await fetch(`${API_BASE}/v1/auth/logout`, {
+      method: "POST",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    clearAuthToken();
+    if (!res.ok) return { success: true };
+    return res.json();
+  },
+
+  async updateMyConfig(updates: {
+    chat?: Record<string, any>;
+    memory_agent?: Record<string, any>;
+    memory_core?: Record<string, any>;
+  }): Promise<{ user: AuthUser }> {
+    const res = await fetch(`${API_BASE}/v1/users/me/config`, {
+      method: "PATCH",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+      body: JSON.stringify(updates || {}),
+    });
+    return parseJsonOrThrow<{ user: AuthUser }>(res);
   },
 
   async createRun(threadId: string, message: string): Promise<ChatRun> {
-    console.log(`[API] Creating run at: ${API_BASE}/v1/chat/runs`, { thread_id: threadId, message });
-    try {
-      const res = await fetch(`${API_BASE}/v1/chat/runs`, {
-        method: "POST",
-        headers: getHeaders(),
-        mode: 'cors',
-        body: JSON.stringify({ thread_id: threadId, message }),
-      });
-      const data = await res.json();
-      console.log(`[API] Create run response:`, data);
-      if (!res.ok) throw new Error(`创建会话失败: ${res.statusText}`);
-      return data;
-    } catch (error) {
-      console.error(`[API] Create run failed:`, error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/v1/chat/runs`, {
+      method: "POST",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+      body: JSON.stringify({ thread_id: threadId, message }),
+    });
+    return parseJsonOrThrow<ChatRun>(res);
   },
 
   async getRunResult(runId: string) {
-    console.log(`[API] Fetching run result for: ${runId}`);
-    try {
-      const res = await fetch(`${API_BASE}/v1/chat/runs/${runId}`, { 
-        headers: getHeaders(),
-        mode: 'cors'
-      });
-      const data = await res.json();
-      console.log(`[API] Run result response:`, data);
-      return data;
-    } catch (error) {
-      console.error(`[API] Fetch run result failed:`, error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/v1/chat/runs/${runId}`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<any>(res);
   },
 
   async getThreadState(threadId: string): Promise<ThreadState> {
-    console.log(`[API] Fetching thread state for: ${threadId}`);
-    try {
-      const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/state`, { 
-        headers: getHeaders(),
-        mode: 'cors'
-      });
-      const data = await res.json();
-      console.log(`[API] Thread state response:`, data);
-      if (!res.ok) throw new Error(`获取线程状态失败: ${res.statusText}`);
-      return data;
-    } catch (error) {
-      console.error(`[API] Fetch thread state failed:`, error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/state`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<ThreadState>(res);
   },
 
   async setMemoryMode(threadId: string, mode: "manual" | "off", discardPending = false) {
     const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/mode`, {
       method: "POST",
-      headers: getHeaders(),
-      mode: 'cors',
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
       body: JSON.stringify({ mode, discard_pending: discardPending }),
     });
-    if (!res.ok) throw new Error(`设置记忆模式失败: ${res.statusText}`);
-    return res.json();
+    return parseJsonOrThrow<any>(res);
   },
 
   async flushBuffer(threadId: string, reason = "manual_api") {
     const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/flush`, {
       method: "POST",
-      headers: getHeaders(),
-      mode: 'cors',
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
       body: JSON.stringify({ reason }),
     });
-    if (!res.ok) throw new Error(`刷新缓存失败: ${res.statusText}`);
-    return res.json();
+    return parseJsonOrThrow<any>(res);
   },
 
   getEventsUrl(runId: string) {
@@ -119,5 +193,12 @@ export const chatApi = {
 
   getThreadEventsUrl(threadId: string) {
     return `${API_BASE}/v1/chat/threads/${threadId}/events?after_seq=-1`;
-  }
+  },
+
+  getSSEHeaders() {
+    return {
+      ...buildHeaders({ withAuth: true, withContentType: false }),
+      Accept: "text/event-stream",
+    };
+  },
 };

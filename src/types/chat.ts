@@ -30,8 +30,26 @@ export interface ChatRun {
   run_id: string;
   status: "queued" | "running" | "completed" | "failed";
   thread_id: string;
+  user_id?: string | null;
   events_url: string;
   result_url: string;
+}
+
+export interface AuthUser {
+  username: string;
+  display_name: string;
+  role: "basic" | "advanced";
+  config_path: string;
+  created_at: string;
+  updated_at: string;
+  editable_fields?: Record<string, string[]>;
+}
+
+export interface AuthLoginResponse {
+  user: AuthUser;
+  access_token: string;
+  token_type: "bearer";
+  expires_at: string;
 }
 
 export interface ChatEvent {

@@ -12,6 +12,11 @@ View your app in AI Studio: https://ai.studio/apps/1435e2af-c663-40b3-b886-0c14f
 
 **Prerequisites:**  Node.js
 
+## API Docs
+
+Interface documentation for the current app/backend integration:
+
+- [API.md](./API.md)
 
 1. Install dependencies:
    `npm install`
