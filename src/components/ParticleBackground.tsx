@@ -2,9 +2,10 @@ import React, { useEffect, useRef } from "react";
 
 interface ParticleBackgroundProps {
   theme: "dark" | "light";
+  active: boolean;
 }
 
-export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme }) => {
+export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme, active }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -16,11 +17,16 @@ export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme })
 
     let particles: Particle[] = [];
     let mouse = { x: 0, y: 0, radius: 100 };
+    let frameId: number | null = null;
 
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      init();
+      if (active) {
+        init();
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     };
 
     class Particle {
@@ -76,7 +82,7 @@ export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme })
         let dyMouse = mouse.y - this.y;
         let distance = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
         
-        if (distance < mouse.radius) {
+        if (distance > 0 && distance < mouse.radius) {
           let force = (mouse.radius - distance) / mouse.radius;
           let forceDirectionX = dxMouse / distance;
           let forceDirectionY = dyMouse / distance;
@@ -124,7 +130,7 @@ export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme })
         particles[i].draw();
         particles[i].update();
       }
-      requestAnimationFrame(animate);
+      frameId = requestAnimationFrame(animate);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
@@ -132,16 +138,28 @@ export const ParticleBackground: React.FC<ParticleBackgroundProps> = ({ theme })
       mouse.y = e.y;
     };
 
+    const clearCanvas = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+
     window.addEventListener("resize", resize);
-    window.addEventListener("mousemove", handleMouseMove);
     resize();
-    animate();
+
+    if (active) {
+      window.addEventListener("mousemove", handleMouseMove);
+      animate();
+    } else {
+      clearCanvas();
+    }
 
     return () => {
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", handleMouseMove);
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
     };
-  }, []);
+  }, [theme, active]);
 
   return (
     <canvas

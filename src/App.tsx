@@ -424,7 +424,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-full text-zinc-200 overflow-hidden font-sans selection:bg-cyan-500/30 relative">
-      <ParticleBackground theme={theme} />
+      <ParticleBackground theme={theme} active={Boolean(authUser)} />
 
       {authBooting ? (
         <div className="w-full h-full flex items-center justify-center text-sm text-zinc-400">Booting...</div>
