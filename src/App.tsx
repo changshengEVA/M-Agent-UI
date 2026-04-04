@@ -7,6 +7,7 @@ import { ThreadSidebar } from "./components/ThreadSidebar";
 import { ParticleBackground } from "./components/ParticleBackground";
 import { SettingsModal } from "./components/SettingsModal";
 import { AuthPanel } from "./components/AuthPanel";
+import { ScheduleModal } from "./components/ScheduleModal";
 import {
   AuthUser,
   DialogueDetail,
@@ -60,6 +61,8 @@ export default function App() {
   const [dialoguesError, setDialoguesError] = useState<string | null>(null);
   const [selectedDialogue, setSelectedDialogue] = useState<DialogueDetail | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
+  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [scheduleRefreshToken, setScheduleRefreshToken] = useState(0);
 
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
@@ -98,6 +101,7 @@ export default function App() {
     setIsThinking(false);
     setIsFlushing(false);
     setFlushStatus(null);
+    setIsScheduleOpen(false);
   }, [cleanupStreams]);
 
   const handleApiError = useCallback(
@@ -234,11 +238,24 @@ export default function App() {
         case "run_completed":
           setIsThinking(false);
           addThinkingLog(type, "任务执行完成", payload);
+          setScheduleRefreshToken((prev) => prev + 1);
           setTimeout(() => fetchThreadState(), 300);
           break;
         case "run_failed":
           setIsThinking(false);
           setError(String(payload?.error || "任务执行失败"));
+          break;
+        case "schedule_created":
+          addThinkingLog(type, "日程已创建", payload);
+          setScheduleRefreshToken((prev) => prev + 1);
+          break;
+        case "schedule_updated":
+          addThinkingLog(type, "日程已更新", payload);
+          setScheduleRefreshToken((prev) => prev + 1);
+          break;
+        case "schedule_canceled":
+          addThinkingLog(type, "日程已取消", payload);
+          setScheduleRefreshToken((prev) => prev + 1);
           break;
         default:
           if (type !== "chat_result") {
@@ -573,6 +590,7 @@ export default function App() {
               onRetry={handleRetry}
               theme={theme}
               isBackendOnline={isBackendOnline}
+              onOpenSchedules={() => setIsScheduleOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onLogout={handleLogout}
               authLabel={authUser.display_name || authUser.username}
@@ -627,6 +645,15 @@ export default function App() {
             theme={theme}
             authUser={authUser}
             onUserUpdated={(user) => setAuthUser(user)}
+          />
+
+          <ScheduleModal
+            isOpen={isScheduleOpen}
+            onClose={() => setIsScheduleOpen(false)}
+            theme={theme}
+            threadId={threadId}
+            refreshToken={scheduleRefreshToken}
+            onApiError={handleApiError}
           />
         </>
       )}

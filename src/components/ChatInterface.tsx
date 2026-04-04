@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, Trash2, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, Trash2, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock } from "lucide-react";
 import { Message, ThreadState } from "../types/chat";
 import { cn } from "../lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -16,6 +16,7 @@ interface ChatInterfaceProps {
   onToggleTheme: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
+  onOpenSchedules: () => void;
   onLogout: () => void;
   theme: "dark" | "light";
   isBackendOnline: boolean | null;
@@ -33,6 +34,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onToggleTheme,
   onRetry,
   onOpenSettings,
+  onOpenSchedules,
   onLogout,
   theme,
   isBackendOnline,
@@ -114,6 +116,16 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {isFlushing ? "FLUSHING..." : `FLUSH BUFFER (${threadState.pending_rounds})`}
             </motion.button>
           )}
+          <button
+            onClick={onOpenSchedules}
+            className={cn(
+              "p-1.5 rounded-sm border transition-colors",
+              theme === 'dark' ? "border-zinc-800 text-zinc-400 hover:text-cyan-400" : "border-zinc-200 text-zinc-500 hover:text-cyan-600"
+            )}
+            title="Schedules"
+          >
+            <CalendarClock className="w-4 h-4" />
+          </button>
           <button
             onClick={onOpenSettings}
             className={cn(

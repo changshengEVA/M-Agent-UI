@@ -4,6 +4,8 @@ import {
   ChatRun,
   DialogueDetail,
   DialogueListResponse,
+  ScheduleItem,
+  ScheduleListResponse,
   ThreadState,
   UserConfigSchemaResponse,
 } from "../types/chat";
@@ -229,6 +231,89 @@ export const chatApi = {
       body: JSON.stringify({ reason }),
     });
     return parseJsonOrThrow<any>(res);
+  },
+
+  async listSchedules(
+    threadId: string,
+    params?: {
+      include_completed?: boolean;
+      limit?: number;
+      keyword?: string;
+      statuses?: string[];
+    },
+  ): Promise<ScheduleListResponse> {
+    const search = new URLSearchParams();
+    if (params?.include_completed) search.set("include_completed", "true");
+    if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+    if (params?.keyword) search.set("keyword", String(params.keyword).trim());
+    if (params?.statuses?.length) search.set("statuses", params.statuses.join(","));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules${suffix}`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<ScheduleListResponse>(res);
+  },
+
+  async createSchedule(
+    threadId: string,
+    payload: {
+      title: string;
+      due_at: string;
+      timezone_name?: string;
+      prompt?: string;
+      original_time_text?: string;
+      source_text?: string;
+      metadata?: Record<string, any>;
+    },
+  ): Promise<{ success: boolean; thread_id: string; item: ScheduleItem }> {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules`, {
+      method: "POST",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+      body: JSON.stringify(payload),
+    });
+    return parseJsonOrThrow<{ success: boolean; thread_id: string; item: ScheduleItem }>(res);
+  },
+
+  async updateSchedule(
+    threadId: string,
+    scheduleId: string,
+    payload: {
+      title?: string;
+      due_at?: string;
+      timezone_name?: string;
+      prompt?: string;
+      original_time_text?: string;
+      source_text?: string;
+      metadata?: Record<string, any>;
+    },
+  ): Promise<{ success: boolean; thread_id: string; item: ScheduleItem }> {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const safeScheduleId = encodeURIComponent(String(scheduleId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules/${safeScheduleId}`, {
+      method: "PATCH",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+      body: JSON.stringify(payload),
+    });
+    return parseJsonOrThrow<{ success: boolean; thread_id: string; item: ScheduleItem }>(res);
+  },
+
+  async cancelSchedule(
+    threadId: string,
+    scheduleId: string,
+  ): Promise<{ success: boolean; thread_id: string; item: ScheduleItem }> {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const safeScheduleId = encodeURIComponent(String(scheduleId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules/${safeScheduleId}`, {
+      method: "DELETE",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<{ success: boolean; thread_id: string; item: ScheduleItem }>(res);
   },
 
   getEventsUrl(runId: string) {

@@ -140,3 +140,35 @@ export interface ThinkingLog {
   data?: any;
   timestamp: number;
 }
+
+export type ScheduleStatus = "pending" | "leased" | "running" | "done" | "failed" | "canceled";
+
+export interface ScheduleItem {
+  schedule_id: string;
+  owner_id: string;
+  thread_id: string;
+  title: string;
+  status: ScheduleStatus;
+  due_at_utc: string;
+  due_at_local: string;
+  due_display: string;
+  timezone_name: string;
+  original_time_text: string;
+  action_type: string;
+  action_payload: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  source_text: string;
+  metadata: Record<string, any>;
+}
+
+export interface ScheduleListResponse {
+  thread_id: string;
+  scope?: "owner" | "thread";
+  owner_id: string;
+  count: number;
+  include_completed: boolean;
+  keyword: string;
+  statuses: string[];
+  items: ScheduleItem[];
+}
