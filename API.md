@@ -78,6 +78,8 @@
 2. `GET /v1/chat/threads/{thread_id}/events?after_seq=-1`（SSE）
 3. `POST /v1/chat/threads/{thread_id}/memory/mode`
 4. `POST /v1/chat/threads/{thread_id}/memory/flush`
+5. `GET /v1/chat/dialogues`
+6. `GET /v1/chat/dialogues/{dialogue_id}`
 
 前端对应：
 
@@ -85,6 +87,8 @@
 - `chatApi.getThreadEventsUrl` + `chatApi.getSSEHeaders`
 - `chatApi.setMemoryMode`
 - `chatApi.flushBuffer`
+- `chatApi.listDialogues`
+- `chatApi.getDialogue`
 
 建议流程：
 
@@ -99,12 +103,14 @@
 
 接口：
 
-1. `PATCH /v1/users/me/config`
-2. `GET /healthz`
-3. 文档入口：`/API.md`、`<base>/docs`
+1. `GET /v1/users/me/config/schema`
+2. `PATCH /v1/users/me/config`
+3. `GET /healthz`
+4. 文档入口：`/API.md`、`<base>/docs`
 
 前端对应：
 
+- `chatApi.getMyConfigSchema`
 - `chatApi.updateMyConfig`
 - `chatApi.healthCheck`
 
@@ -248,6 +254,52 @@
   - `memory_agent`：`model_name`、`agent_temperature`、`recursion_limit` 等
   - `memory_core`：`workflow_id`、`memory_owner_name`、`memory_top_k` 等
 
+### 4.2 获取当前用户配置字段元数据
+
+- `GET /v1/users/me/config/schema`
+- Auth：是
+
+用途：
+
+- 给前端暴露可改字段、字段类型、当前值、示例 patch，避免前端硬编码字段清单。
+
+成功响应（200）示例：
+
+```json
+{
+  "user": {
+    "username": "alice",
+    "role": "basic",
+    "config_path": "F:/AI/M-Agent/config/users/alice/chat.yaml"
+  },
+  "sections": {
+    "chat": {
+      "editable_fields": ["chat_assistant_name", "chat_persona_prompt"],
+      "patch_example": {
+        "chat_assistant_name": "Memory Assistant",
+        "chat_persona_prompt": "你是我的私人AI伙伴。"
+      },
+      "fields": {
+        "chat_assistant_name": {
+          "type": "string",
+          "description": "Assistant display name used in chat responses.",
+          "editable": true,
+          "present": true,
+          "current_value": "Memory Assistant"
+        },
+        "persist_memory": {
+          "type": "boolean",
+          "description": "Whether captured memory can be persisted.",
+          "editable": false,
+          "present": true,
+          "current_value": true
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 5. 聊天接口详情
@@ -315,6 +367,69 @@
 {
   "thread_id": "demo-thread-1",
   "answer": "好的，我记住了。"
+}
+```
+
+### 5.4 历史对话列表
+
+- `GET /v1/chat/dialogues`
+- Auth：是
+- Query（可选）：
+  - `thread_id`: 仅看某个 thread 的历史对话
+  - `limit`: 默认 30，最大 200
+  - `offset`: 默认 0
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "dialogue_id": "chat_demo-thread-1_20260401_050018_334856",
+      "thread_id": "demo-thread-1",
+      "start_time": "2026-04-01T05:00:18.334856Z",
+      "end_time": "2026-04-01T05:00:19.334856Z",
+      "source": "chat_api_thread_flush",
+      "round_count": 1,
+      "turn_count": 2,
+      "preview": "今天正式学习 Postman 了",
+      "dialogue_file": "F:/AI/M-Agent/data/memory/user_x/dialogues/2026-04/xxx.json"
+    }
+  ],
+  "offset": 0,
+  "limit": 30,
+  "next_offset": null,
+  "has_more": false,
+  "total": 1
+}
+```
+
+### 5.5 历史对话详情
+
+- `GET /v1/chat/dialogues/{dialogue_id}`
+- Auth：是
+
+响应示例：
+
+```json
+{
+  "dialogue_id": "chat_demo-thread-1_20260401_050018_334856",
+  "thread_id": "demo-thread-1",
+  "thread_id_internal": "alice::demo-thread-1",
+  "user_id": "User",
+  "participants": ["User", "Memory Assistant"],
+  "meta": {},
+  "turns": [
+    {
+      "turn_id": 0,
+      "speaker": "User",
+      "text": "今天正式学习 Postman 了",
+      "timestamp": "2026-04-01T05:00:18.334856Z"
+    }
+  ],
+  "round_count": 1,
+  "turn_count": 2,
+  "dialogue_file": "F:/AI/M-Agent/data/memory/user_x/dialogues/2026-04/xxx.json"
 }
 ```
 
@@ -462,11 +577,14 @@
 
 ### 9.2 用户配置
 
+- `getMyConfigSchema`
 - `updateMyConfig`
 
 ### 9.3 聊天与线程
 
 - `createRun`
+- `listDialogues`
+- `getDialogue`
 - `getRunResult`
 - `getThreadState`
 - `setMemoryMode`
@@ -484,4 +602,6 @@
 3. 未登录：走注册/登录
 4. 已登录：创建 run + 订阅 run SSE
 5. 同时订阅 thread SSE + 拉取 thread state
-6. 用户修改配置：`PATCH /v1/users/me/config`
+6. 设置页加载字段元数据：`GET /v1/users/me/config/schema`
+7. 用户修改配置：`PATCH /v1/users/me/config`
+8. 侧栏查看历史对话：`GET /v1/chat/dialogues` + `GET /v1/chat/dialogues/{dialogue_id}`

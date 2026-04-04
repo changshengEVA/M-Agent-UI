@@ -1,4 +1,12 @@
-import { AuthLoginResponse, AuthUser, ChatRun, ThreadState } from "../types/chat";
+import {
+  AuthLoginResponse,
+  AuthUser,
+  ChatRun,
+  DialogueDetail,
+  DialogueListResponse,
+  ThreadState,
+  UserConfigSchemaResponse,
+} from "../types/chat";
 
 const API_URL_STORAGE_KEY = "VITE_AGENT_API_URL";
 const AUTH_TOKEN_STORAGE_KEY = "M_AGENT_AUTH_TOKEN";
@@ -141,6 +149,14 @@ export const chatApi = {
     return parseJsonOrThrow<{ user: AuthUser }>(res);
   },
 
+  async getMyConfigSchema(): Promise<UserConfigSchemaResponse> {
+    const res = await fetch(`${API_BASE}/v1/users/me/config/schema`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<UserConfigSchemaResponse>(res);
+  },
+
   async createRun(threadId: string, message: string): Promise<ChatRun> {
     const res = await fetch(`${API_BASE}/v1/chat/runs`, {
       method: "POST",
@@ -149,6 +165,34 @@ export const chatApi = {
       body: JSON.stringify({ thread_id: threadId, message }),
     });
     return parseJsonOrThrow<ChatRun>(res);
+  },
+
+  async listDialogues(params?: {
+    thread_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<DialogueListResponse> {
+    const search = new URLSearchParams();
+    const threadId = String(params?.thread_id || "").trim();
+    if (threadId) search.set("thread_id", threadId);
+    if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+    if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+    const query = search.toString();
+    const suffix = query ? `?${query}` : "";
+    const res = await fetch(`${API_BASE}/v1/chat/dialogues${suffix}`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<DialogueListResponse>(res);
+  },
+
+  async getDialogue(dialogueId: string): Promise<DialogueDetail> {
+    const safeId = encodeURIComponent(String(dialogueId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/dialogues/${safeId}`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<DialogueDetail>(res);
   },
 
   async getRunResult(runId: string) {

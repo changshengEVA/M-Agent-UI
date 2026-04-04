@@ -52,6 +52,72 @@ export interface AuthLoginResponse {
   expires_at: string;
 }
 
+export type UserConfigSectionKey = "chat" | "memory_agent" | "memory_core";
+
+export interface UserConfigFieldSchema {
+  type: string;
+  description: string;
+  editable: boolean;
+  present: boolean;
+  current_value: any;
+}
+
+export interface UserConfigSectionSchema {
+  editable_fields: string[];
+  patch_example: Record<string, any>;
+  fields: Record<string, UserConfigFieldSchema>;
+}
+
+export interface UserConfigSchemaResponse {
+  user: {
+    username: string;
+    role: "basic" | "advanced";
+    config_path: string;
+  };
+  sections: Record<UserConfigSectionKey, UserConfigSectionSchema>;
+}
+
+export interface DialogueSummary {
+  dialogue_id: string;
+  thread_id: string;
+  start_time: string | null;
+  end_time: string | null;
+  source?: string | null;
+  round_count: number;
+  turn_count: number;
+  preview?: string;
+  dialogue_file?: string;
+}
+
+export interface DialogueListResponse {
+  items: DialogueSummary[];
+  offset: number;
+  limit: number;
+  next_offset: number | null;
+  has_more: boolean;
+  total: number;
+}
+
+export interface DialogueTurn {
+  turn_id: number;
+  speaker: string;
+  text: string;
+  timestamp: string | null;
+}
+
+export interface DialogueDetail {
+  dialogue_id: string;
+  thread_id: string;
+  thread_id_internal?: string | null;
+  user_id?: string | null;
+  participants: string[];
+  meta: Record<string, any>;
+  turns: DialogueTurn[];
+  round_count: number;
+  turn_count: number;
+  dialogue_file?: string;
+}
+
 export interface ChatEvent {
   run_id: string;
   seq: number;

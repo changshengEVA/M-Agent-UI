@@ -7,7 +7,15 @@ import { ThreadSidebar } from "./components/ThreadSidebar";
 import { ParticleBackground } from "./components/ParticleBackground";
 import { SettingsModal } from "./components/SettingsModal";
 import { AuthPanel } from "./components/AuthPanel";
-import { AuthUser, HistoryRound, Message, ThinkingLog, ThreadState } from "./types/chat";
+import {
+  AuthUser,
+  DialogueDetail,
+  DialogueSummary,
+  HistoryRound,
+  Message,
+  ThinkingLog,
+  ThreadState,
+} from "./types/chat";
 import { API_BASE, chatApi, clearAuthToken, getAuthToken, updateApiBase } from "./services/api";
 
 const DEFAULT_THREAD_ID = "demo-thread-1";
@@ -27,6 +35,11 @@ export default function App() {
   const [currentApiUrl, setCurrentApiUrl] = useState(API_BASE);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authBooting, setAuthBooting] = useState(true);
+  const [dialogues, setDialogues] = useState<DialogueSummary[]>([]);
+  const [dialoguesLoading, setDialoguesLoading] = useState(false);
+  const [dialoguesError, setDialoguesError] = useState<string | null>(null);
+  const [selectedDialogue, setSelectedDialogue] = useState<DialogueDetail | null>(null);
+  const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
 
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
@@ -56,6 +69,10 @@ export default function App() {
     clearAuthToken();
     setAuthUser(null);
     setThreadState(null);
+    setDialogues([]);
+    setDialoguesError(null);
+    setSelectedDialogue(null);
+    setSelectedDialogueId(null);
     setMessages([]);
     setThinkingLogs([]);
     setIsThinking(false);
@@ -103,6 +120,25 @@ export default function App() {
       await handleApiError(err, "获取线程状态失败");
     }
   }, [authUser, threadId, handleApiError]);
+
+  const fetchDialogues = useCallback(async () => {
+    if (!authUser) return;
+    setDialoguesLoading(true);
+    setDialoguesError(null);
+    try {
+      const payload = await chatApi.listDialogues({ limit: 80, offset: 0 });
+      setDialogues(Array.isArray(payload.items) ? payload.items : []);
+      setIsBackendOnline(true);
+    } catch (err: any) {
+      const message = String(err?.message || "Failed to load stored dialogues");
+      setDialoguesError(message);
+      if (message.startsWith("[401]")) {
+        await forceLogout();
+      }
+    } finally {
+      setDialoguesLoading(false);
+    }
+  }, [authUser, forceLogout]);
 
   const addThinkingLog = (type: string, message: string, data?: any) => {
     setThinkingLogs((prev) => [
@@ -166,6 +202,7 @@ export default function App() {
           setFlushStatus(null);
           addThinkingLog(type, "Memory Flush Completed", payload);
           fetchThreadState();
+          fetchDialogues();
           break;
         case "thread_state_updated":
           if (payload?.thread_state) {
@@ -189,7 +226,7 @@ export default function App() {
           }
       }
     },
-    [fetchThreadState],
+    [fetchDialogues, fetchThreadState],
   );
 
   const setupThreadEventSource = useCallback(
@@ -259,6 +296,8 @@ export default function App() {
       setError("请先登录");
       return;
     }
+    setSelectedDialogue(null);
+    setSelectedDialogueId(null);
     setIsThinking(true);
     setError(null);
     setThinkingLogs([]);
@@ -353,10 +392,32 @@ export default function App() {
     setThreadId(newId);
     setMessages([]);
     setThinkingLogs([]);
+    setSelectedDialogue(null);
+    setSelectedDialogueId(null);
   };
 
   const handleSelectRound = (round: HistoryRound) => {
     addThinkingLog("history_recall", `Inspecting round: ${round.round_id}`, round);
+  };
+
+  const handleSelectDialogue = async (item: DialogueSummary) => {
+    if (!authUser) return;
+    setSelectedDialogueId(item.dialogue_id);
+    setDialoguesError(null);
+    try {
+      const detail = await chatApi.getDialogue(item.dialogue_id);
+      setSelectedDialogue(detail);
+      addThinkingLog("dialogue_loaded", `Loaded stored dialogue: ${item.dialogue_id}`, {
+        dialogue_id: item.dialogue_id,
+        turn_count: detail.turn_count,
+      });
+    } catch (err: any) {
+      const message = String(err?.message || "Failed to load dialogue detail");
+      setDialoguesError(message);
+      if (message.startsWith("[401]")) {
+        await forceLogout();
+      }
+    }
   };
 
   const handleRetry = () => {
@@ -365,6 +426,7 @@ export default function App() {
     checkHealth();
     if (authUser) {
       fetchThreadState();
+      fetchDialogues();
       setupThreadEventSource(threadId);
     }
   };
@@ -418,9 +480,10 @@ export default function App() {
       return;
     }
     fetchThreadState();
+    fetchDialogues();
     setupThreadEventSource(threadId);
     return cleanupStreams;
-  }, [authUser, threadId, fetchThreadState, setupThreadEventSource, cleanupStreams]);
+  }, [authUser, threadId, fetchDialogues, fetchThreadState, setupThreadEventSource, cleanupStreams]);
 
   return (
     <div className="flex h-screen w-full text-zinc-200 overflow-hidden font-sans selection:bg-cyan-500/30 relative">
@@ -437,6 +500,8 @@ export default function App() {
               setError(null);
               setMessages([]);
               setThinkingLogs([]);
+              setSelectedDialogue(null);
+              setSelectedDialogueId(null);
             }}
           />
           <SettingsModal
@@ -455,6 +520,12 @@ export default function App() {
             threadState={threadState}
             onNewThread={handleNewThread}
             onSelectRound={handleSelectRound}
+            dialogues={dialogues}
+            dialoguesLoading={dialoguesLoading}
+            dialoguesError={dialoguesError}
+            selectedDialogue={selectedDialogue}
+            selectedDialogueId={selectedDialogueId}
+            onSelectDialogue={handleSelectDialogue}
             isFlushing={isFlushing}
             flushStatus={flushStatus}
             theme={theme}
