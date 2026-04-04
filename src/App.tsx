@@ -19,6 +19,26 @@ import {
 import { API_BASE, chatApi, clearAuthToken, getAuthToken, updateApiBase } from "./services/api";
 
 const DEFAULT_THREAD_ID = "demo-thread-1";
+const ACTIVE_THREAD_KEY_PREFIX = "M_AGENT_ACTIVE_THREAD_ID:";
+
+const threadStorageKey = (username: string) => {
+  const safeUser = String(username || "").trim().toLowerCase();
+  return `${ACTIVE_THREAD_KEY_PREFIX}${safeUser}`;
+};
+
+const loadActiveThreadId = (username: string): string => {
+  if (typeof window === "undefined") return "";
+  const raw = localStorage.getItem(threadStorageKey(username)) || "";
+  const safe = String(raw || "").trim();
+  return safe;
+};
+
+const saveActiveThreadId = (username: string, threadId: string) => {
+  if (typeof window === "undefined") return;
+  const safeThread = String(threadId || "").trim();
+  if (!safeThread) return;
+  localStorage.setItem(threadStorageKey(username), safeThread);
+};
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -451,6 +471,11 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (!authUser) return;
+    saveActiveThreadId(authUser.username, threadId);
+  }, [authUser, threadId]);
+
+  useEffect(() => {
     const bootstrap = async () => {
       await checkHealth();
       const token = getAuthToken();
@@ -461,6 +486,8 @@ export default function App() {
       try {
         const me = await chatApi.me();
         if (me.user) {
+          const restoredThreadId = loadActiveThreadId(me.user.username) || DEFAULT_THREAD_ID;
+          setThreadId(restoredThreadId);
           setAuthUser(me.user);
         } else {
           clearAuthToken();
@@ -496,6 +523,8 @@ export default function App() {
           <AuthPanel
             theme={theme}
             onAuthenticated={(user) => {
+              const restoredThreadId = loadActiveThreadId(user.username) || DEFAULT_THREAD_ID;
+              setThreadId(restoredThreadId);
               setAuthUser(user);
               setError(null);
               setMessages([]);
