@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { chatApi } from "../services/api";
-import { ScheduleItem } from "../types/chat";
+import { ScheduleHeartbeatStatus, ScheduleItem } from "../types/chat";
 
 interface ScheduleModalProps {
   isOpen: boolean;
@@ -43,6 +43,418 @@ const browserTimezone = () => {
   } catch {
     return "Asia/Shanghai";
   }
+};
+
+const formatDateTimeText = (value?: string | null) => {
+  const text = String(value || "").trim();
+  if (!text) return "--";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleString();
+};
+
+const parseTimestampMs = (value?: string | null) => {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const parsed = new Date(text);
+  const timestamp = parsed.getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const formatBeatCountdown = (seconds: number | null) => {
+  if (seconds === null) return "--";
+  if (seconds <= 0) return "Now";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${pad(remainingSeconds)}`;
+};
+
+type HeartbeatVisualState = "stable" | "lagging" | "error" | "stopped";
+
+const resolveHeartbeatVisualState = (
+  heartbeat: ScheduleHeartbeatStatus | null,
+  nowMs: number,
+): HeartbeatVisualState => {
+  if (heartbeat?.last_error) return "error";
+  if (!heartbeat?.worker_alive) return "stopped";
+  const intervalSeconds = Math.max(1, Number(heartbeat?.interval_seconds || heartbeat?.beat_interval_seconds || 10));
+  const intervalMs = intervalSeconds * 1000;
+  const nextBeatMs = parseTimestampMs(heartbeat?.next_beat_due_at);
+  if (nextBeatMs !== null && nowMs - nextBeatMs >= intervalMs) {
+    return "lagging";
+  }
+  return "stable";
+};
+
+const buildHeartbeatWavePath = (
+  phase: number,
+  visualState: HeartbeatVisualState,
+  amplitudeScale = 1,
+) => {
+  const baseline = 18;
+  if (visualState === "stopped") {
+    return `M 0 ${baseline} L 100 ${baseline}`;
+  }
+
+  const spikeX = 12 + clamp(phase, 0, 1) * 72;
+  const start = clamp(spikeX - 23, 0, 100);
+  const whisperA = clamp(spikeX - 18, 0, 100);
+  const whisperB = clamp(spikeX - 15, 0, 100);
+  const riseA = clamp(spikeX - 10.5, 0, 100);
+  const riseB = clamp(spikeX - 7.2, 0, 100);
+  const preDip = clamp(spikeX - 4.6, 0, 100);
+  const peak = clamp(spikeX, 0, 100);
+  const drop = clamp(spikeX + 2.1, 0, 100);
+  const rebound = clamp(spikeX + 5.3, 0, 100);
+  const settle = clamp(spikeX + 8.8, 0, 100);
+  const afterBlip = clamp(spikeX + 12.6, 0, 100);
+  const tail = clamp(spikeX + 19, 0, 100);
+  const peakY = baseline - 15.5 * amplitudeScale;
+  const dropY = baseline + 9.2 * amplitudeScale;
+  const reboundY = baseline - 5.3 * amplitudeScale;
+  const afterBlipY = baseline - 2.5 * amplitudeScale;
+  const smallRiseY = baseline - 2.9 * amplitudeScale;
+  const smallDipY = baseline + 1.8 * amplitudeScale;
+
+  return [
+    `M 0 ${baseline}`,
+    `L ${start} ${baseline}`,
+    `L ${whisperA} ${baseline + 0.7 * amplitudeScale}`,
+    `L ${whisperB} ${baseline - 0.9 * amplitudeScale}`,
+    `L ${riseA} ${baseline}`,
+    `L ${riseB} ${smallRiseY}`,
+    `L ${preDip} ${smallDipY}`,
+    `L ${peak} ${peakY}`,
+    `L ${drop} ${dropY}`,
+    `L ${rebound} ${reboundY}`,
+    `L ${settle} ${baseline}`,
+    `L ${afterBlip} ${afterBlipY}`,
+    `L ${tail} ${baseline}`,
+    `L 100 ${baseline}`,
+  ].join(" ");
+};
+
+const buildHeartbeatBedPath = (phase: number, amplitudeScale = 1) => {
+  const baseline = 18;
+  const rippleX = 10 + clamp(phase, 0, 1) * 70;
+  return [
+    `M 0 ${baseline}`,
+    `L ${clamp(rippleX - 30, 0, 100)} ${baseline}`,
+    `L ${clamp(rippleX - 24, 0, 100)} ${baseline + 0.35 * amplitudeScale}`,
+    `L ${clamp(rippleX - 18, 0, 100)} ${baseline - 0.4 * amplitudeScale}`,
+    `L ${clamp(rippleX - 12, 0, 100)} ${baseline + 0.3 * amplitudeScale}`,
+    `L ${clamp(rippleX - 6, 0, 100)} ${baseline - 0.25 * amplitudeScale}`,
+    `L ${clamp(rippleX, 0, 100)} ${baseline}`,
+    `L 100 ${baseline}`,
+  ].join(" ");
+};
+
+const resolveHeartbeatPalette = (theme: "dark" | "light", visualState: HeartbeatVisualState) => {
+  if (visualState === "error") {
+    return theme === "dark"
+      ? {
+          stroke: "#f59e0b",
+          glow: "rgba(245, 158, 11, 0.35)",
+          chipClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+          panelClass: "border-amber-500/20 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_42%),linear-gradient(180deg,rgba(24,16,6,0.96),rgba(10,10,12,0.96))]",
+          textClass: "text-amber-300",
+        }
+      : {
+          stroke: "#d97706",
+          glow: "rgba(217, 119, 6, 0.18)",
+          chipClass: "border-amber-200 bg-amber-50 text-amber-700",
+          panelClass: "border-amber-200 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_42%),linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.96))]",
+          textClass: "text-amber-700",
+        };
+  }
+  if (visualState === "lagging") {
+    return theme === "dark"
+      ? {
+          stroke: "#facc15",
+          glow: "rgba(250, 204, 21, 0.28)",
+          chipClass: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+          panelClass: "border-yellow-500/20 bg-[radial-gradient(circle_at_top_left,rgba(250,204,21,0.12),transparent_40%),linear-gradient(180deg,rgba(14,14,10,0.96),rgba(8,9,11,0.96))]",
+          textClass: "text-yellow-300",
+        }
+      : {
+          stroke: "#ca8a04",
+          glow: "rgba(202, 138, 4, 0.18)",
+          chipClass: "border-yellow-200 bg-yellow-50 text-yellow-700",
+          panelClass: "border-yellow-200 bg-[radial-gradient(circle_at_top_left,rgba(253,224,71,0.16),transparent_40%),linear-gradient(180deg,rgba(254,252,232,0.96),rgba(255,255,255,0.96))]",
+          textClass: "text-yellow-700",
+        };
+  }
+  if (visualState === "stopped") {
+    return theme === "dark"
+      ? {
+          stroke: "#71717a",
+          glow: "rgba(113, 113, 122, 0.18)",
+          chipClass: "border-zinc-600/40 bg-zinc-800/60 text-zinc-300",
+          panelClass: "border-zinc-700/40 bg-[radial-gradient(circle_at_top_left,rgba(113,113,122,0.12),transparent_40%),linear-gradient(180deg,rgba(12,12,16,0.96),rgba(8,9,11,0.96))]",
+          textClass: "text-zinc-300",
+        }
+      : {
+          stroke: "#71717a",
+          glow: "rgba(113, 113, 122, 0.12)",
+          chipClass: "border-zinc-200 bg-zinc-100 text-zinc-700",
+          panelClass: "border-zinc-200 bg-[radial-gradient(circle_at_top_left,rgba(161,161,170,0.12),transparent_40%),linear-gradient(180deg,rgba(244,244,245,0.96),rgba(255,255,255,0.96))]",
+          textClass: "text-zinc-700",
+        };
+  }
+  return theme === "dark"
+    ? {
+        stroke: "#34d399",
+        glow: "rgba(52, 211, 153, 0.32)",
+        chipClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+        panelClass: "border-emerald-500/20 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.14),transparent_42%),linear-gradient(180deg,rgba(6,18,14,0.96),rgba(8,9,11,0.96))]",
+        textClass: "text-emerald-300",
+      }
+    : {
+        stroke: "#059669",
+        glow: "rgba(5, 150, 105, 0.16)",
+        chipClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        panelClass: "border-emerald-200 bg-[radial-gradient(circle_at_top_left,rgba(110,231,183,0.18),transparent_42%),linear-gradient(180deg,rgba(236,253,245,0.96),rgba(255,255,255,0.96))]",
+        textClass: "text-emerald-700",
+      };
+};
+
+interface HeartbeatMonitorCardProps {
+  heartbeat: ScheduleHeartbeatStatus | null;
+  heartbeatLoading: boolean;
+  nowMs: number;
+  theme: "dark" | "light";
+}
+
+const HeartbeatMonitorCard: React.FC<HeartbeatMonitorCardProps> = ({
+  heartbeat,
+  heartbeatLoading,
+  nowMs,
+  theme,
+}) => {
+  const intervalSeconds = Math.max(1, Number(heartbeat?.interval_seconds || heartbeat?.beat_interval_seconds || 10));
+  const intervalMs = intervalSeconds * 1000;
+  const lastBeatMs = parseTimestampMs(heartbeat?.last_beat_finished_at || heartbeat?.last_beat_started_at);
+  const nextBeatMs = parseTimestampMs(heartbeat?.next_beat_due_at);
+  const secondsUntilNext = nextBeatMs === null ? null : Math.max(0, Math.ceil((nextBeatMs - nowMs) / 1000));
+  const phase = nextBeatMs !== null
+    ? clamp(1 - (nextBeatMs - nowMs) / intervalMs, 0, 1)
+    : lastBeatMs !== null
+      ? clamp((nowMs - lastBeatMs) / intervalMs, 0, 1)
+      : 0.18;
+  const visualState = resolveHeartbeatVisualState(heartbeat, nowMs);
+  const palette = resolveHeartbeatPalette(theme, visualState);
+  const primaryAmplitude = visualState === "error" ? 1.18 : visualState === "lagging" ? 1.06 : 1;
+  const secondaryAmplitude = visualState === "error" ? 0.58 : 0.52;
+  const primaryPath = buildHeartbeatWavePath(phase, visualState, primaryAmplitude);
+  const echoPath = buildHeartbeatWavePath(clamp(phase - 0.18, 0, 1), visualState, secondaryAmplitude);
+  const bedPath = buildHeartbeatBedPath(phase, visualState === "stopped" ? 0.2 : 1);
+  const scanLeft = `${12 + phase * 72}%`;
+  const beamWidth = visualState === "error" ? "20%" : visualState === "lagging" ? "18%" : "16%";
+  const beamOpacity = heartbeatLoading ? 0.95 : visualState === "stable" ? 0.85 : 0.72;
+  const pulseX = 12 + phase * 72;
+  const pulseStrength = visualState === "stopped"
+    ? 0.18
+    : clamp(0.45 + (1 - Math.abs(phase - 0.5) * 1.8), 0.45, visualState === "error" ? 1.5 : 1.18);
+  const statusLabel = visualState === "error"
+    ? "Needs Attention"
+    : visualState === "lagging"
+      ? "Lagging"
+      : visualState === "stopped"
+        ? "Stopped"
+        : heartbeatLoading
+          ? "Syncing"
+          : "Nominal";
+  const leadLabel = heartbeat?.worker_alive
+    ? `T-${formatBeatCountdown(secondsUntilNext)}`
+    : "OFF";
+
+  return (
+    <div className={cn("rounded-sm border p-4", palette.panelClass)}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Heartbeat Monitor</p>
+          <p className={cn("mt-2 text-xl font-semibold", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            Every {intervalSeconds}s
+          </p>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            The trace advances with the real scheduler window instead of looping as a fake animation.
+          </p>
+        </div>
+
+        <div className="text-right">
+          <span className={cn("inline-flex items-center rounded-sm border px-2.5 py-1 text-[10px] uppercase tracking-[0.24em]", palette.chipClass)}>
+            {statusLabel}
+          </span>
+          <p className={cn("mt-3 text-3xl font-semibold tabular-nums", palette.textClass)}>
+            {leadLabel}
+          </p>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-zinc-500">
+            Next trigger window
+          </p>
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          "relative mt-5 overflow-hidden rounded-sm border",
+          theme === "dark" ? "border-white/8 bg-[#020606]" : "border-white/80 bg-[#fbfffd]",
+        )}
+      >
+        <div
+          className="absolute inset-0 opacity-80"
+          style={{
+            backgroundImage:
+              theme === "dark"
+                ? "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(rgba(52,211,153,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(52,211,153,0.04) 1px, transparent 1px)"
+                : "linear-gradient(rgba(24,24,27,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(24,24,27,0.06) 1px, transparent 1px), linear-gradient(rgba(5,150,105,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(5,150,105,0.04) 1px, transparent 1px)",
+            backgroundSize: "26px 26px, 26px 26px, 104px 104px, 104px 104px",
+          }}
+        />
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0",
+            theme === "dark"
+              ? "bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08),transparent_60%)]"
+              : "bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.06),transparent_60%)]",
+          )}
+        />
+        <div
+          className={cn(
+            "absolute inset-y-0 left-0 right-0 top-1/2 border-t",
+            theme === "dark" ? "border-white/10" : "border-zinc-300/60",
+          )}
+        />
+        <motion.div
+          className="pointer-events-none absolute inset-y-2 z-10"
+          animate={{ left: scanLeft, opacity: beamOpacity }}
+          transition={{ duration: 0.65, ease: "easeOut" }}
+          style={{
+            width: beamWidth,
+            transform: "translateX(-50%)",
+            background: `linear-gradient(90deg, transparent 0%, ${palette.glow} 18%, ${palette.stroke} 50%, ${palette.glow} 82%, transparent 100%)`,
+            boxShadow: `0 0 24px ${palette.glow}, 0 0 56px ${palette.glow}`,
+            filter: "blur(0.4px)",
+          }}
+        />
+        <motion.div
+          className="pointer-events-none absolute z-20 rounded-full"
+          animate={{
+            left: `${pulseX}%`,
+            top: "50%",
+            opacity: visualState === "stopped" ? 0.18 : 0.45 + pulseStrength * 0.22,
+            scale: visualState === "stopped" ? 0.8 : 0.95 + pulseStrength * 0.38,
+          }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          style={{
+            width: 16,
+            height: 16,
+            transform: "translate(-50%, -50%)",
+            background: palette.stroke,
+            boxShadow: `0 0 18px ${palette.glow}, 0 0 42px ${palette.glow}`,
+          }}
+        />
+        <svg viewBox="0 0 100 36" className="relative z-20 h-40 w-full">
+          <path
+            d={bedPath}
+            fill="none"
+            stroke={palette.stroke}
+            strokeWidth="0.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.18"
+          />
+          <path
+            d={echoPath}
+            fill="none"
+            stroke={palette.stroke}
+            strokeWidth="1.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.34"
+          />
+          <path
+            d={primaryPath}
+            fill="none"
+            stroke={palette.stroke}
+            strokeWidth="2.15"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ filter: `drop-shadow(0 0 14px ${palette.glow}) drop-shadow(0 0 28px ${palette.glow})` }}
+          />
+        </svg>
+
+        <div className="pointer-events-none absolute left-4 top-3 z-30">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Live Trace</p>
+          <p className={cn("mt-1 text-xs font-medium", palette.textClass)}>
+            {visualState === "error"
+              ? "Recent beat failed"
+              : visualState === "lagging"
+                ? "Scheduler is behind the expected window"
+                : visualState === "stopped"
+                  ? "Worker is not running"
+                  : "Sweep and pulse are synced to the real scheduler cadence"}
+          </p>
+        </div>
+
+        <div className="pointer-events-none absolute right-4 top-3 z-30 text-right">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Beam Intensity</p>
+          <p className={cn("mt-1 text-xs font-medium tabular-nums", palette.textClass)}>
+            {(pulseStrength * 100).toFixed(0)}%
+          </p>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-3 right-4 z-30 text-right">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Beats / Busy / Failed</p>
+          <p className={cn("mt-1 text-sm font-semibold tabular-nums", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            {heartbeat?.beats_total ?? 0} / {heartbeat?.items_busy_retried ?? 0} / {heartbeat?.items_failed ?? 0}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 text-[11px]">
+        <div className={cn("rounded-sm border px-3 py-2", theme === "dark" ? "border-white/8 bg-black/20" : "border-zinc-100 bg-zinc-50")}>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Last Beat</p>
+          <p className={cn("mt-1 tabular-nums", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            {formatDateTimeText(heartbeat?.last_beat_finished_at || heartbeat?.last_beat_started_at)}
+          </p>
+        </div>
+        <div className={cn("rounded-sm border px-3 py-2", theme === "dark" ? "border-white/8 bg-black/20" : "border-zinc-100 bg-zinc-50")}>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Next Beat</p>
+          <p className={cn("mt-1 tabular-nums", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            {formatDateTimeText(heartbeat?.next_beat_due_at)}
+          </p>
+        </div>
+        <div className={cn("rounded-sm border px-3 py-2", theme === "dark" ? "border-white/8 bg-black/20" : "border-zinc-100 bg-zinc-50")}>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Busy Retry</p>
+          <p className={cn("mt-1 tabular-nums", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            {heartbeat?.busy_retry_seconds || 5}s
+          </p>
+        </div>
+        <div className={cn("rounded-sm border px-3 py-2", theme === "dark" ? "border-white/8 bg-black/20" : "border-zinc-100 bg-zinc-50")}>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Completed</p>
+          <p className={cn("mt-1 tabular-nums", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
+            {heartbeat?.items_completed ?? 0}
+          </p>
+        </div>
+      </div>
+
+      {heartbeat?.last_error ? (
+        <div
+          className={cn(
+            "mt-3 rounded-sm border px-3 py-2 text-[11px]",
+            theme === "dark"
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              : "border-amber-200 bg-amber-50 text-amber-700",
+          )}
+        >
+          Last heartbeat error: {heartbeat.last_error}
+        </div>
+      ) : null}
+    </div>
+  );
 };
 
 const statusLabel: Record<string, string> = {
@@ -75,7 +487,9 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   onApiError,
 }) => {
   const [items, setItems] = useState<ScheduleItem[]>([]);
+  const [heartbeat, setHeartbeat] = useState<ScheduleHeartbeatStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [heartbeatLoading, setHeartbeatLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +500,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDueAt, setDraftDueAt] = useState(buildDefaultDueAt());
   const [draftTimezone, setDraftTimezone] = useState(browserTimezone());
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const activeItems = useMemo(
     () => items.filter((item) => !["done", "failed", "canceled"].includes(item.status)),
@@ -108,6 +523,9 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
         keyword: appliedKeyword || undefined,
       });
       setItems(Array.isArray(payload.items) ? payload.items : []);
+      if (payload.heartbeat) {
+        setHeartbeat(payload.heartbeat);
+      }
     } catch (err: any) {
       const text = String(err?.message || "加载日程失败");
       setError(text);
@@ -117,22 +535,58 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
     }
   }, [appliedKeyword, includeCompleted, isOpen, onApiError, threadId]);
 
+  const loadHeartbeat = useCallback(async () => {
+    if (!isOpen) return;
+    setHeartbeatLoading(true);
+    try {
+      const payload = await chatApi.getScheduleHeartbeat(threadId);
+      setHeartbeat(payload.heartbeat || null);
+    } catch (err: any) {
+      await onApiError?.(err, "鍔犺浇 heartbeat 鐘舵€佸け璐?");
+    } finally {
+      setHeartbeatLoading(false);
+    }
+  }, [isOpen, onApiError, threadId]);
+
+  const loadAll = useCallback(async () => {
+    await Promise.all([loadSchedules(), loadHeartbeat()]);
+  }, [loadHeartbeat, loadSchedules]);
+
   useEffect(() => {
     if (!isOpen) return;
-    loadSchedules();
-  }, [isOpen, threadId, includeCompleted, refreshToken, loadSchedules]);
+    loadAll();
+  }, [isOpen, threadId, includeCompleted, refreshToken, loadAll]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const intervalSeconds = Math.max(1, Number(heartbeat?.interval_seconds || heartbeat?.beat_interval_seconds || 10));
+    const refreshMs = Math.min(3000, Math.max(2000, Math.floor((intervalSeconds * 1000) / 4)));
+    const timer = window.setInterval(() => {
+      loadHeartbeat();
+    }, refreshMs);
+    return () => window.clearInterval(timer);
+  }, [heartbeat?.beat_interval_seconds, heartbeat?.interval_seconds, isOpen, loadHeartbeat]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
       setError(null);
       setMessage(null);
+      setHeartbeat(null);
     }
   }, [isOpen]);
 
   const handleSearch = () => {
     const nextKeyword = keyword.trim();
     if (nextKeyword === appliedKeyword) {
-      loadSchedules();
+      loadAll();
       return;
     }
     setAppliedKeyword(nextKeyword);
@@ -243,7 +697,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={loadSchedules}
+                  onClick={loadAll}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border text-[10px] uppercase tracking-widest transition-colors",
                     theme === "dark"
@@ -432,6 +886,13 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  <HeartbeatMonitorCard
+                    heartbeat={heartbeat}
+                    heartbeatLoading={heartbeatLoading}
+                    nowMs={nowMs}
+                    theme={theme}
+                  />
 
                   <div className="space-y-3">
                     {loading ? (

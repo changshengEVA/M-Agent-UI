@@ -4,6 +4,7 @@ import {
   ChatRun,
   DialogueDetail,
   DialogueListResponse,
+  ScheduleHeartbeatResponse,
   ScheduleItem,
   ScheduleListResponse,
   ThreadState,
@@ -254,6 +255,15 @@ export const chatApi = {
       mode: "cors",
     });
     return parseJsonOrThrow<ScheduleListResponse>(res);
+  },
+
+  async getScheduleHeartbeat(threadId: string): Promise<ScheduleHeartbeatResponse> {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules/heartbeat`, {
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<ScheduleHeartbeatResponse>(res);
   },
 
   async createSchedule(

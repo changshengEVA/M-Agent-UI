@@ -20,6 +20,7 @@ export interface HistoryRound {
   round_id: string;
   capture_state: "pending" | "written" | "skipped";
   flush_id: string | null;
+  source?: "user" | "schedule";
   user_message: string;
   assistant_message: string;
   user_at: string;
@@ -171,4 +172,31 @@ export interface ScheduleListResponse {
   keyword: string;
   statuses: string[];
   items: ScheduleItem[];
+  heartbeat?: ScheduleHeartbeatStatus;
+}
+
+export interface ScheduleHeartbeatStatus {
+  enabled: boolean;
+  worker_alive: boolean;
+  created_at?: string | null;
+  beat_interval_seconds: number;
+  interval_seconds?: number;
+  batch_limit?: number;
+  busy_retry_seconds: number;
+  beats_total: number;
+  items_leased: number;
+  items_started: number;
+  items_completed: number;
+  items_failed: number;
+  items_busy_retried: number;
+  last_beat_started_at?: string | null;
+  last_beat_finished_at?: string | null;
+  next_beat_due_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface ScheduleHeartbeatResponse {
+  thread_id: string;
+  scope?: "owner" | "thread";
+  heartbeat: ScheduleHeartbeatStatus;
 }

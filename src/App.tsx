@@ -125,12 +125,14 @@ export default function App() {
       if (state.history_rounds_data) {
         const historyMessages: Message[] = [];
         state.history_rounds_data.forEach((round) => {
-          historyMessages.push({
-            id: `${round.round_id}-user`,
-            role: "user",
-            content: round.user_message,
-            timestamp: round.user_at,
-          });
+          if (round.source !== "schedule") {
+            historyMessages.push({
+              id: `${round.round_id}-user`,
+              role: "user",
+              content: round.user_message,
+              timestamp: round.user_at,
+            });
+          }
           historyMessages.push({
             id: `${round.round_id}-assistant`,
             role: "assistant",
