@@ -936,10 +936,19 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
 
                               <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
                                 <Clock3 className="w-3.5 h-3.5" />
-                                <span>{item.due_display}</span>
+                                <span>{item.schedule_kind === "before_event" ? `提醒 ${item.due_display}` : item.due_display}</span>
                                 <span className="opacity-30">•</span>
                                 <span className="font-mono">{item.timezone_name}</span>
                               </div>
+                              {item.event_display && (
+                                <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
+                                  <CalendarClock className="w-3.5 h-3.5" />
+                                  <span>事件 {item.event_display}</span>
+                                  {item.reminder_offset_label && (
+                                    <span className="opacity-70">提前{item.reminder_offset_label}</span>
+                                  )}
+                                </div>
+                              )}
 
                               <div className="mt-2 grid gap-1 text-[11px] text-zinc-500">
                                 <p>Thread: {item.thread_id || "-"}</p>

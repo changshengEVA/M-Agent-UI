@@ -153,6 +153,12 @@ export interface ScheduleItem {
   due_at_utc: string;
   due_at_local: string;
   due_display: string;
+  schedule_kind?: "time_due" | "before_event" | string;
+  event_at_utc?: string | null;
+  event_at_local?: string | null;
+  event_display?: string | null;
+  reminder_offset_minutes?: number | null;
+  reminder_offset_label?: string | null;
   timezone_name: string;
   original_time_text: string;
   action_type: string;
