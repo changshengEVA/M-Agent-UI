@@ -8,6 +8,7 @@ import { ParticleBackground } from "./components/ParticleBackground";
 import { SettingsModal } from "./components/SettingsModal";
 import { AuthPanel } from "./components/AuthPanel";
 import { ScheduleModal } from "./components/ScheduleModal";
+import { WorkingMemoryFloatingPanel } from "./components/WorkingMemoryFloatingPanel";
 import {
   AuthUser,
   DialogueDetail,
@@ -63,6 +64,7 @@ export default function App() {
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleRefreshToken, setScheduleRefreshToken] = useState(0);
+  const [wmPanelOpen, setWmPanelOpen] = useState(false);
 
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
@@ -593,9 +595,17 @@ export default function App() {
               theme={theme}
               isBackendOnline={isBackendOnline}
               onOpenSchedules={() => setIsScheduleOpen(true)}
+              onOpenWorkingMemory={() => setWmPanelOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onLogout={handleLogout}
               authLabel={authUser.display_name || authUser.username}
+            />
+
+            <WorkingMemoryFloatingPanel
+              wm={threadState?.working_memory}
+              open={wmPanelOpen}
+              onClose={() => setWmPanelOpen(false)}
+              theme={theme}
             />
 
             <AnimatePresence>

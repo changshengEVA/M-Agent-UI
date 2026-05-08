@@ -1,5 +1,15 @@
 export type MemoryMode = "manual" | "off";
 
+/** Backend `thread_state.working_memory` (GET …/memory/state, SSE). */
+export interface WorkingMemoryState {
+  enabled?: boolean;
+  stored_entries?: number;
+  inject_max_entries?: number;
+  max_stored_entries?: number;
+  ui_expose_max_entries?: number;
+  entries?: Record<string, unknown>[];
+}
+
 export interface ThreadState {
   thread_id: string;
   mode: MemoryMode;
@@ -14,6 +24,7 @@ export interface ThreadState {
   idle_flush_deadline: string | null;
   history_rounds_data?: HistoryRound[];
   history_preview?: HistoryRound[];
+  working_memory?: WorkingMemoryState;
 }
 
 export interface HistoryRound {

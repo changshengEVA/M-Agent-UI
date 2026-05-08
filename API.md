@@ -97,7 +97,12 @@
 3. 点切换模式 -> 调 mode 接口
 4. 点 flush -> 调 flush 接口
 
-### 2.4 设置页（SettingsModal）
+**工作记忆（WM）**：`GET .../memory/state` 与 SSE `thread_state_updated` 中的 `thread_state.working_memory` 含：
+
+- `enabled`, `stored_entries`, `inject_max_entries`, `max_stored_entries`, `ui_expose_max_entries`
+- `entries`：服务端存储的 WM 条目 **尾部**（最多 `ui_expose_max_entries` 条，与注入模型的 tail 无关），用于前端调试展示。
+
+前端组件：`tools/M-Agent-UI/src/components/WorkingMemoryFloatingPanel.tsx`（顶栏 Layers 按钮打开可拖拽面板）。
 
 用途：修改 API 地址、打开文档、修改用户个性化配置。
 

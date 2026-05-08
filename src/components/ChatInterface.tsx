@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, Trash2, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers } from "lucide-react";
 import { Message, ThreadState } from "../types/chat";
 import { cn } from "../lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -17,6 +17,7 @@ interface ChatInterfaceProps {
   onRetry: () => void;
   onOpenSettings: () => void;
   onOpenSchedules: () => void;
+  onOpenWorkingMemory?: () => void;
   onLogout: () => void;
   theme: "dark" | "light";
   isBackendOnline: boolean | null;
@@ -35,6 +36,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onRetry,
   onOpenSettings,
   onOpenSchedules,
+  onOpenWorkingMemory,
   onLogout,
   theme,
   isBackendOnline,
@@ -126,6 +128,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           >
             <CalendarClock className="w-4 h-4" />
           </button>
+          {onOpenWorkingMemory && (
+            <button
+              type="button"
+              onClick={onOpenWorkingMemory}
+              className={cn(
+                "p-1.5 rounded-sm border transition-colors",
+                theme === "dark"
+                  ? "border-zinc-800 text-zinc-400 hover:text-violet-400"
+                  : "border-zinc-200 text-zinc-500 hover:text-violet-600",
+              )}
+              title="工作记忆 (WM)"
+            >
+              <Layers className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={onOpenSettings}
             className={cn(
