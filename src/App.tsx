@@ -14,6 +14,7 @@ import {
   DialogueDetail,
   DialogueSummary,
   HistoryRound,
+  ImageAttachment,
   Message,
   ThinkingLog,
   ThreadState,
@@ -42,6 +43,40 @@ const saveActiveThreadId = (username: string, threadId: string) => {
   localStorage.setItem(threadStorageKey(username), safeThread);
 };
 
+const normalizeImageUrl = (url?: string | null): string | undefined => {
+  const safe = String(url || "").trim();
+  if (!safe) return undefined;
+  if (/^https?:\/\//i.test(safe)) return safe;
+  return `${API_BASE}${safe.startsWith("/") ? safe : `/${safe}`}`;
+};
+
+const turnToAttachments = (turn?: {
+  img_url?: string | null;
+  img_file?: string | null;
+  blip_caption?: string | null;
+  upload_id?: string | null;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
+} | null): ImageAttachment[] => {
+  if (!turn) return [];
+  const imageUrl = normalizeImageUrl(turn.img_url);
+  const imageFile = String(turn.img_file || "").trim();
+  const blipCaption = String(turn.blip_caption || "").trim();
+  if (!imageUrl && !imageFile && !blipCaption) return [];
+  return [
+    {
+      upload_id: String(turn.upload_id || "").trim() || undefined,
+      image_url: imageUrl,
+      image_file: imageFile || undefined,
+      blip_caption: blipCaption || undefined,
+      mime_type: String(turn.mime_type || "").trim() || undefined,
+      width: typeof turn.width === "number" ? turn.width : undefined,
+      height: typeof turn.height === "number" ? turn.height : undefined,
+    },
+  ];
+};
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
@@ -65,6 +100,13 @@ export default function App() {
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleRefreshToken, setScheduleRefreshToken] = useState(0);
   const [wmPanelOpen, setWmPanelOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{
+    file: File;
+    previewUrl: string;
+    fileName: string;
+    isUploading: boolean;
+    blipCaption?: string;
+  } | null>(null);
 
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
@@ -78,6 +120,15 @@ export default function App() {
       threadAbortControllerRef.current.abort();
       threadAbortControllerRef.current = null;
     }
+  }, []);
+
+  const clearSelectedImage = useCallback(() => {
+    setSelectedImage((prev) => {
+      if (prev?.previewUrl) {
+        URL.revokeObjectURL(prev.previewUrl);
+      }
+      return null;
+    });
   }, []);
 
   const checkHealth = useCallback(async () => {
@@ -133,6 +184,7 @@ export default function App() {
               role: "user",
               content: round.user_message,
               timestamp: round.user_at,
+              attachments: turnToAttachments(round.user_turn),
             });
           }
           historyMessages.push({
@@ -140,6 +192,7 @@ export default function App() {
             role: "assistant",
             content: round.assistant_message,
             timestamp: round.assistant_at,
+            attachments: turnToAttachments(round.assistant_turn),
           });
         });
         setMessages(historyMessages);
@@ -348,11 +401,46 @@ export default function App() {
       role: "user",
       content,
       timestamp: new Date().toISOString(),
+      attachments: selectedImage
+        ? [
+            {
+              image_url: selectedImage.previewUrl,
+              blip_caption: selectedImage.blipCaption,
+            },
+          ]
+        : [],
     };
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const run = await chatApi.createRun(threadId, content);
+      let attachments: ImageAttachment[] = [];
+      if (selectedImage) {
+        setSelectedImage((prev) => (prev ? { ...prev, isUploading: true } : prev));
+        const uploaded = await chatApi.uploadImage(threadId, selectedImage.file);
+        attachments = [
+          {
+            upload_id: uploaded.upload_id,
+            image_url: normalizeImageUrl(uploaded.image_url),
+            image_file: uploaded.image_file,
+            blip_caption: uploaded.blip_caption,
+            mime_type: uploaded.mime_type || undefined,
+            width: typeof uploaded.width === "number" ? uploaded.width : undefined,
+            height: typeof uploaded.height === "number" ? uploaded.height : undefined,
+          },
+        ];
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === userMsg.id
+              ? {
+                  ...item,
+                  attachments,
+                }
+              : item,
+          ),
+        );
+      }
+      const run = await chatApi.createRun(threadId, content, attachments);
+      clearSelectedImage();
       addThinkingLog("run_started", `任务已启动: ${run.run_id}`);
 
       if (eventAbortControllerRef.current) {
@@ -397,6 +485,7 @@ export default function App() {
     } catch (err) {
       await handleApiError(err, "发送消息失败");
       setIsThinking(false);
+      setSelectedImage((prev) => (prev ? { ...prev, isUploading: false } : prev));
     }
   };
 
@@ -428,6 +517,21 @@ export default function App() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
+  const handleSelectImage = (file: File | null) => {
+    if (!file) {
+      clearSelectedImage();
+      return;
+    }
+    clearSelectedImage();
+    const previewUrl = URL.createObjectURL(file);
+    setSelectedImage({
+      file,
+      previewUrl,
+      fileName: file.name,
+      isUploading: false,
+    });
+  };
+
   const handleNewThread = () => {
     const newId = `thread-${Math.random().toString(36).slice(2, 8)}`;
     setThreadId(newId);
@@ -435,6 +539,7 @@ export default function App() {
     setThinkingLogs([]);
     setSelectedDialogue(null);
     setSelectedDialogueId(null);
+    clearSelectedImage();
   };
 
   const handleSelectRound = (round: HistoryRound) => {
@@ -484,6 +589,7 @@ export default function App() {
     } catch {
       clearAuthToken();
     }
+    clearSelectedImage();
     await forceLogout();
   };
 
@@ -552,6 +658,7 @@ export default function App() {
               setThinkingLogs([]);
               setSelectedDialogue(null);
               setSelectedDialogueId(null);
+              clearSelectedImage();
             }}
           />
           <SettingsModal
@@ -599,6 +706,18 @@ export default function App() {
               onOpenSettings={() => setIsSettingsOpen(true)}
               onLogout={handleLogout}
               authLabel={authUser.display_name || authUser.username}
+              selectedImage={
+                selectedImage
+                  ? {
+                      previewUrl: selectedImage.previewUrl,
+                      fileName: selectedImage.fileName,
+                      isUploading: selectedImage.isUploading,
+                      blipCaption: selectedImage.blipCaption,
+                    }
+                  : null
+              }
+              onSelectImage={handleSelectImage}
+              onClearImage={clearSelectedImage}
             />
 
             <WorkingMemoryFloatingPanel

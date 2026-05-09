@@ -34,6 +34,8 @@ export interface HistoryRound {
   source?: "user" | "schedule";
   user_message: string;
   assistant_message: string;
+  user_turn?: DialogueTurn;
+  assistant_turn?: DialogueTurn;
   user_at: string;
   assistant_at: string;
 }
@@ -115,6 +117,13 @@ export interface DialogueTurn {
   speaker: string;
   text: string;
   timestamp: string | null;
+  img_url?: string | null;
+  img_file?: string | null;
+  blip_caption?: string | null;
+  upload_id?: string | null;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface DialogueDetail {
@@ -143,6 +152,32 @@ export interface Message {
   content: string;
   timestamp: string;
   status?: "sending" | "sent" | "error";
+  attachments?: ImageAttachment[];
+}
+
+export interface ImageAttachment {
+  upload_id?: string;
+  image_url?: string;
+  image_file?: string;
+  blip_caption?: string;
+  mime_type?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface UploadImageResponse {
+  upload_id: string;
+  owner?: string | null;
+  thread_id?: string | null;
+  original_filename?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number;
+  width?: number | null;
+  height?: number | null;
+  image_file: string;
+  image_url: string;
+  blip_caption: string;
+  created_at: string;
 }
 
 export interface ThinkingLog {

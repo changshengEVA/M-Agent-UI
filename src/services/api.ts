@@ -4,10 +4,12 @@ import {
   ChatRun,
   DialogueDetail,
   DialogueListResponse,
+  ImageAttachment,
   ScheduleHeartbeatResponse,
   ScheduleItem,
   ScheduleListResponse,
   ThreadState,
+  UploadImageResponse,
   UserConfigSchemaResponse,
 } from "../types/chat";
 
@@ -160,12 +162,25 @@ export const chatApi = {
     return parseJsonOrThrow<UserConfigSchemaResponse>(res);
   },
 
-  async createRun(threadId: string, message: string): Promise<ChatRun> {
+  async uploadImage(threadId: string, file: File): Promise<UploadImageResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("thread_id", threadId);
+    const res = await fetch(`${API_BASE}/v1/chat/uploads/images`, {
+      method: "POST",
+      headers: buildHeaders({ withContentType: false, withAuth: true }),
+      mode: "cors",
+      body: formData,
+    });
+    return parseJsonOrThrow<UploadImageResponse>(res);
+  },
+
+  async createRun(threadId: string, message: string, attachments?: ImageAttachment[]): Promise<ChatRun> {
     const res = await fetch(`${API_BASE}/v1/chat/runs`, {
       method: "POST",
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
-      body: JSON.stringify({ thread_id: threadId, message }),
+      body: JSON.stringify({ thread_id: threadId, message, attachments: attachments || [] }),
     });
     return parseJsonOrThrow<ChatRun>(res);
   },
@@ -332,6 +347,10 @@ export const chatApi = {
 
   getThreadEventsUrl(threadId: string) {
     return `${API_BASE}/v1/chat/threads/${threadId}/events?after_seq=-1`;
+  },
+
+  getImageFetchHeaders() {
+    return buildHeaders({ withAuth: true, withContentType: false });
   },
 
   getSSEHeaders() {

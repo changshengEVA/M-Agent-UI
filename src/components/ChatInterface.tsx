@@ -1,9 +1,70 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ImagePlus, X } from "lucide-react";
 import { Message, ThreadState } from "../types/chat";
 import { cn } from "../lib/utils";
 import ReactMarkdown from "react-markdown";
+import { chatApi } from "../services/api";
+
+const AuthenticatedImage: React.FC<{
+  src: string;
+  alt: string;
+  className?: string;
+}> = ({ src, alt, className }) => {
+  const [resolvedSrc, setResolvedSrc] = useState<string>(src);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    const safeSrc = String(src || "").trim();
+    if (!safeSrc) {
+      setResolvedSrc("");
+      return () => {
+        return;
+      };
+    }
+
+    if (safeSrc.startsWith("blob:") || safeSrc.startsWith("data:")) {
+      setResolvedSrc(safeSrc);
+      return () => {
+        return;
+      };
+    }
+
+    const load = async () => {
+      try {
+        const response = await fetch(safeSrc, {
+          headers: chatApi.getImageFetchHeaders(),
+          mode: "cors",
+        });
+        if (!response.ok) {
+          throw new Error(`image fetch failed: ${response.status}`);
+        }
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (active && objectUrl) {
+          setResolvedSrc(objectUrl);
+        }
+      } catch {
+        if (active) {
+          setResolvedSrc(safeSrc);
+        }
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [src]);
+
+  if (!resolvedSrc) return null;
+  return <img src={resolvedSrc} alt={alt} className={className} />;
+};
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -22,6 +83,14 @@ interface ChatInterfaceProps {
   theme: "dark" | "light";
   isBackendOnline: boolean | null;
   authLabel?: string;
+  selectedImage?: {
+    previewUrl: string;
+    fileName: string;
+    isUploading?: boolean;
+    blipCaption?: string;
+  } | null;
+  onSelectImage?: (file: File | null) => void;
+  onClearImage?: () => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -40,10 +109,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onLogout,
   theme,
   isBackendOnline,
-  authLabel
+  authLabel,
+  selectedImage,
+  onSelectImage,
+  onClearImage,
 }) => {
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -234,6 +307,32 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   )}>
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
+                  {msg.attachments?.length ? (
+                    <div className="mt-3 space-y-2">
+                      {msg.attachments.map((attachment, index) => (
+                        <div
+                          key={`${msg.id}-att-${index}`}
+                          className={cn(
+                            "rounded-sm border p-2",
+                            theme === "dark" ? "border-zinc-800/80 bg-black/20" : "border-zinc-200 bg-zinc-50/80",
+                          )}
+                        >
+                          {attachment.image_url ? (
+                            <AuthenticatedImage
+                              src={attachment.image_url}
+                              alt={attachment.blip_caption || "uploaded image"}
+                              className="max-h-52 rounded-sm border border-black/10 object-contain"
+                            />
+                          ) : null}
+                          {attachment.blip_caption ? (
+                            <p className="mt-2 text-[11px] font-mono text-cyan-500">
+                              BLIP: {attachment.blip_caption}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-tighter px-1">
                   {msg.role} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -294,7 +393,52 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         "p-6 border-t z-10 transition-all duration-300",
         theme === 'dark' ? "bg-[#0A0A0A]/80 border-[#1A1A1A]" : "bg-white/80 border-zinc-200"
       )}>
+        {selectedImage ? (
+          <div className="max-w-4xl mx-auto mb-3">
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-sm border p-3",
+                theme === "dark" ? "border-zinc-800 bg-black/30" : "border-zinc-200 bg-zinc-50/90",
+              )}
+            >
+              <img
+                src={selectedImage.previewUrl}
+                alt={selectedImage.fileName}
+                className="h-20 w-20 rounded-sm object-cover border border-black/10"
+              />
+              <div className="min-w-0 flex-1">
+                <p className={cn("truncate text-xs font-mono", theme === "dark" ? "text-zinc-200" : "text-zinc-800")}>
+                  {selectedImage.fileName}
+                </p>
+                <p className="mt-1 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+                  {selectedImage.isUploading ? "Analyzing image..." : "Ready to send"}
+                </p>
+                {selectedImage.blipCaption ? (
+                  <p className="mt-2 text-[11px] font-mono text-cyan-500">
+                    BLIP: {selectedImage.blipCaption}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => onClearImage?.()}
+                disabled={isThinking || isFlushing || selectedImage.isUploading}
+                className="text-zinc-500 transition-colors hover:text-rose-500 disabled:opacity-40"
+                title="Remove image"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ) : null}
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto relative">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            onChange={(e) => onSelectImage?.(e.target.files?.[0] || null)}
+            className="hidden"
+          />
           <input
             type="text"
             value={input}
@@ -308,6 +452,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 : "bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-cyan-500/50"
             )}
           />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isThinking || isFlushing}
+            className="absolute right-12 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-cyan-400 disabled:opacity-30 transition-colors"
+            title="Upload image"
+          >
+            <ImagePlus className="w-4 h-4" />
+          </button>
           <button
             type="submit"
             disabled={!input.trim() || isThinking || isFlushing}
