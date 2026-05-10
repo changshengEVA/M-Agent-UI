@@ -117,6 +117,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const canSend = (!!input.trim() || !!selectedImage) && !isThinking && !isFlushing;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -126,7 +127,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim() && !isThinking) {
+    if (canSend) {
       onSendMessage(input);
       setInput("");
     }
@@ -463,7 +464,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </button>
           <button
             type="submit"
-            disabled={!input.trim() || isThinking || isFlushing}
+            disabled={!canSend}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-cyan-400 disabled:opacity-30 transition-colors"
           >
             <Send className="w-4 h-4" />
