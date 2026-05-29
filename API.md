@@ -80,6 +80,7 @@
 4. `POST /v1/chat/threads/{thread_id}/memory/flush`
 5. `GET /v1/chat/dialogues`
 6. `GET /v1/chat/dialogues/{dialogue_id}`
+7. `POST /v1/chat/dialogues/upload`（multipart + SSE 索引进度）
 
 前端对应：
 
@@ -89,6 +90,7 @@
 - `chatApi.flushBuffer`
 - `chatApi.listDialogues`
 - `chatApi.getDialogue`
+- `chatApi.uploadDialogues` + `DialogueUploadModal`（Stored Dialogues 标题旁上传按钮）
 
 建议流程：
 

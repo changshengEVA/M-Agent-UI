@@ -4,10 +4,14 @@ import {
   ChatRun,
   DialogueDetail,
   DialogueListResponse,
+  DialogueUploadCompletePayload,
   ImageAttachment,
   ScheduleHeartbeatResponse,
   ScheduleItem,
   ScheduleListResponse,
+  SceneListResponse,
+  StimulusSubmitResponse,
+  ThinkLifeTransactionsResponse,
   ThreadState,
   UploadImageResponse,
   UserConfigSchemaResponse,
@@ -185,6 +189,47 @@ export const chatApi = {
     return parseJsonOrThrow<ChatRun>(res);
   },
 
+  async submitStimulus(
+    threadId: string,
+    text: string,
+    attachments?: ImageAttachment[],
+  ): Promise<StimulusSubmitResponse> {
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${encodeURIComponent(threadId)}/stimuli`, {
+      method: "POST",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+      body: JSON.stringify({ kind: "user_message", text, attachments: attachments || [] }),
+    });
+    return parseJsonOrThrow<StimulusSubmitResponse>(res);
+  },
+
+  async getTransactions(threadId: string): Promise<ThinkLifeTransactionsResponse> {
+    const res = await fetch(
+      `${API_BASE}/v1/chat/threads/${encodeURIComponent(threadId)}/transactions`,
+      {
+        headers: buildHeaders({ withAuth: true }),
+        mode: "cors",
+      },
+    );
+    return parseJsonOrThrow<ThinkLifeTransactionsResponse>(res);
+  },
+
+  async getScene(threadId: string, params?: { limit?: number; before_seq?: number }): Promise<SceneListResponse> {
+    const search = new URLSearchParams();
+    if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+    if (typeof params?.before_seq === "number") search.set("before_seq", String(params.before_seq));
+    const query = search.toString();
+    const suffix = query ? `?${query}` : "";
+    const res = await fetch(
+      `${API_BASE}/v1/chat/threads/${encodeURIComponent(threadId)}/scene${suffix}`,
+      {
+        headers: buildHeaders({ withAuth: true }),
+        mode: "cors",
+      },
+    );
+    return parseJsonOrThrow<SceneListResponse>(res);
+  },
+
   async listDialogues(params?: {
     thread_id?: string;
     limit?: number;
@@ -211,6 +256,78 @@ export const chatApi = {
       mode: "cors",
     });
     return parseJsonOrThrow<DialogueDetail>(res);
+  },
+
+  async uploadDialogues(
+    files: File[],
+    options?: {
+      rebuildRag?: boolean;
+      indexRag?: boolean;
+      signal?: AbortSignal;
+      onEvent?: (event: { type: string; seq?: number; payload?: Record<string, unknown> }) => void;
+    },
+  ): Promise<DialogueUploadCompletePayload> {
+    if (!files.length) {
+      throw new Error("no dialogue files selected");
+    }
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file, file.name);
+    }
+    formData.append("rebuild_rag", options?.rebuildRag ? "true" : "false");
+    formData.append("index_rag", options?.indexRag === false ? "false" : "true");
+
+    const res = await fetch(`${API_BASE}/v1/chat/dialogues/upload`, {
+      method: "POST",
+      headers: buildHeaders({ withContentType: false, withAuth: true }),
+      mode: "cors",
+      body: formData,
+      signal: options?.signal,
+    });
+
+    if (!res.ok) {
+      throw await parseResponseError(res);
+    }
+    if (!res.body) {
+      throw new Error("upload stream unavailable");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed: DialogueUploadCompletePayload | null = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      for (const chunk of chunks) {
+        const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+        if (!dataLine) continue;
+        const jsonStr = dataLine.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const event = JSON.parse(jsonStr) as { type: string; payload?: DialogueUploadCompletePayload };
+          options?.onEvent?.(event);
+          if (event.type === "upload_completed" && event.payload) {
+            completed = event.payload as DialogueUploadCompletePayload;
+          }
+          if (event.type === "upload_failed") {
+            throw new Error(String((event as any).payload?.message || "upload failed"));
+          }
+        } catch (err) {
+          if (err instanceof SyntaxError) continue;
+          throw err;
+        }
+      }
+    }
+
+    if (!completed) {
+      throw new Error("upload finished without completion event");
+    }
+    return completed;
   },
 
   async getRunResult(runId: string) {

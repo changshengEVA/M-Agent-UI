@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ImagePlus, X } from "lucide-react";
-import { Message, ThreadState } from "../types/chat";
+import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ScrollText, ImagePlus, X } from "lucide-react";
+import { Message, ThreadState, ThinkLifeRuntimePhase } from "../types/chat";
 import { cn } from "../lib/utils";
+import { thinkLifePhaseLabel } from "../lib/thinkLifeRuntime";
 import ReactMarkdown from "react-markdown";
 import { chatApi } from "../services/api";
 
@@ -70,6 +71,8 @@ interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (content: string) => void;
   isThinking: boolean;
+  runtimeProfile?: string;
+  thinkLifePhase?: ThinkLifeRuntimePhase;
   isFlushing: boolean;
   threadState: ThreadState | null;
   onFlush: () => void;
@@ -79,6 +82,8 @@ interface ChatInterfaceProps {
   onOpenSettings: () => void;
   onOpenSchedules: () => void;
   onOpenWorkingMemory?: () => void;
+  onOpenScene?: () => void;
+  sceneEntryCount?: number;
   onLogout: () => void;
   theme: "dark" | "light";
   isBackendOnline: boolean | null;
@@ -97,6 +102,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   messages, 
   onSendMessage, 
   isThinking,
+  runtimeProfile = "legacy",
+  thinkLifePhase = "ready",
   isFlushing,
   threadState,
   onFlush,
@@ -106,6 +113,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onOpenSettings,
   onOpenSchedules,
   onOpenWorkingMemory,
+  onOpenScene,
+  sceneEntryCount = 0,
   onLogout,
   theme,
   isBackendOnline,
@@ -117,7 +126,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const canSend = (!!input.trim() || !!selectedImage) && !isThinking && !isFlushing;
+  const isThinkLife = runtimeProfile === "think_life";
+  const canSend =
+    (!!input.trim() || !!selectedImage) &&
+    !isFlushing &&
+    (isThinkLife || !isThinking);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -172,12 +185,31 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {threadState?.mode === "manual" ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
                 Memory: {threadState?.mode?.toUpperCase() || "OFF"}
               </button>
+              {isThinkLife && (
+                <span
+                  className={cn(
+                    "text-[10px] font-mono uppercase tracking-wider",
+                    thinkLifePhase === "busy"
+                      ? "text-amber-400"
+                      : thinkLifePhase === "processing"
+                        ? "text-cyan-400"
+                        : "text-emerald-500/80",
+                  )}
+                >
+                  OS: {thinkLifePhaseLabel(thinkLifePhase)}
+                  {typeof threadState?.think_life?.effective_depth === "number"
+                    ? ` (depth=${threadState.think_life.effective_depth})`
+                    : threadState?.think_life?.pending_stimuli
+                      ? ` (inbox=${threadState.think_life.pending_stimuli})`
+                      : ""}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {threadState?.has_pending_data && (
+          {(threadState?.has_pending_data || isThinkLife) && (
             <motion.button
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -187,9 +219,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 "flex items-center gap-2 px-3 py-1.5 rounded-sm bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono transition-colors",
                 isFlushing ? "opacity-50 cursor-not-allowed" : "hover:bg-amber-500/20"
               )}
+              title={
+                isThinkLife
+                  ? "结束当前 user 事务段并写入长期记忆（与 Scene 段对齐）"
+                  : "将待写入对话缓冲刷新到长期记忆"
+              }
             >
               <RefreshCw className={cn("w-3 h-3", isFlushing && "animate-spin")} />
-              {isFlushing ? "FLUSHING..." : `FLUSH BUFFER (${threadState.pending_rounds})`}
+              {isFlushing
+                ? "FLUSHING..."
+                : isThinkLife
+                  ? "FLUSH SEGMENT"
+                  : `FLUSH BUFFER (${threadState?.pending_rounds ?? 0})`}
             </motion.button>
           )}
           <button
@@ -202,19 +243,43 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           >
             <CalendarClock className="w-4 h-4" />
           </button>
+          {onOpenScene && isThinkLife && (
+            <button
+              type="button"
+              onClick={onOpenScene}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 rounded-sm border text-[10px] font-mono uppercase tracking-wider transition-colors",
+                theme === "dark"
+                  ? "border-cyan-800/60 text-cyan-400 hover:bg-cyan-950/30"
+                  : "border-cyan-200 text-cyan-700 hover:bg-cyan-50",
+              )}
+              title="情景时间轴 (Scene)"
+            >
+              <ScrollText className="w-3.5 h-3.5" />
+              Scene
+              {sceneEntryCount > 0 ? (
+                <span className="opacity-70">({sceneEntryCount})</span>
+              ) : null}
+            </button>
+          )}
           {onOpenWorkingMemory && (
             <button
               type="button"
               onClick={onOpenWorkingMemory}
               className={cn(
-                "p-1.5 rounded-sm border transition-colors",
-                theme === "dark"
-                  ? "border-zinc-800 text-zinc-400 hover:text-violet-400"
-                  : "border-zinc-200 text-zinc-500 hover:text-violet-600",
+                "flex items-center gap-1 px-2 py-1 rounded-sm border text-[10px] font-mono uppercase tracking-wider transition-colors",
+                isThinkLife
+                  ? theme === "dark"
+                    ? "border-violet-800/60 text-violet-400 hover:bg-violet-950/30"
+                    : "border-violet-200 text-violet-700 hover:bg-violet-50"
+                  : theme === "dark"
+                    ? "border-zinc-800 text-zinc-400 hover:text-violet-400"
+                    : "border-zinc-200 text-zinc-500 hover:text-violet-600",
               )}
-              title="工作记忆 (WM)"
+              title={isThinkLife ? "工作记忆 (按事务)" : "工作记忆 (WM)"}
             >
-              <Layers className="w-4 h-4" />
+              <Layers className="w-3.5 h-3.5" />
+              {isThinkLife ? "WM·事务" : "WM"}
             </button>
           )}
           <button
@@ -360,7 +425,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 )}>
                   <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-cyan-500/40" />
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
-                  <span className="text-xs font-mono text-cyan-500/70 animate-pulse uppercase tracking-widest">Processing Neural Pathways...</span>
+                  <span className="text-xs font-mono text-cyan-500/70 animate-pulse uppercase tracking-widest">
+                    {isThinkLife
+                      ? thinkLifePhase === "busy"
+                        ? "Queue Backlog — Processing..."
+                        : "Processing Neural Pathways..."
+                      : "Processing Neural Pathways..."}
+                  </span>
                 </div>
               </div>
             </motion.div>
@@ -423,7 +494,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <button
                 type="button"
                 onClick={() => onClearImage?.()}
-                disabled={isThinking || isFlushing || selectedImage.isUploading}
+                disabled={(isThinkLife ? false : isThinking) || isFlushing || selectedImage.isUploading}
                 className="text-zinc-500 transition-colors hover:text-rose-500 disabled:opacity-40"
                 title="Remove image"
               >
@@ -445,7 +516,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={isFlushing ? "MEMORY FLUSH IN PROGRESS..." : "ENTER COMMAND OR MESSAGE..."}
-            disabled={isThinking || isFlushing}
+            disabled={(isThinkLife ? false : isThinking) || isFlushing}
             className={cn(
               "w-full rounded-sm py-3 pl-4 pr-12 text-sm font-mono transition-all disabled:opacity-50 border focus:outline-none focus:ring-1 focus:ring-cyan-900/20",
               theme === 'dark' 
@@ -456,7 +527,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isThinking || isFlushing}
+            disabled={(isThinkLife ? false : isThinking) || isFlushing}
             className="absolute right-12 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-cyan-400 disabled:opacity-30 transition-colors"
             title="Upload image"
           >

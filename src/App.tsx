@@ -9,6 +9,9 @@ import { SettingsModal } from "./components/SettingsModal";
 import { AuthPanel } from "./components/AuthPanel";
 import { ScheduleModal } from "./components/ScheduleModal";
 import { WorkingMemoryFloatingPanel } from "./components/WorkingMemoryFloatingPanel";
+import { ThinkLifeWmPanel } from "./components/ThinkLifeWmPanel";
+import { SceneTimelinePanel } from "./components/SceneTimelinePanel";
+import { DialogueUploadModal } from "./components/DialogueUploadModal";
 import {
   AuthUser,
   DialogueDetail,
@@ -16,13 +19,22 @@ import {
   HistoryRound,
   ImageAttachment,
   Message,
+  SceneEntry,
+  ThinkLifeTransaction,
   ThinkingLog,
   ThreadState,
 } from "./types/chat";
 import { API_BASE, chatApi, clearAuthToken, getAuthToken, updateApiBase } from "./services/api";
+import {
+  thinkLifeFromRuntimePayload,
+  thinkLifePhaseFromState,
+  isThinkLifeProcessing,
+  type ThinkLifeRuntimePhase,
+} from "./lib/thinkLifeRuntime";
 
 const DEFAULT_THREAD_ID = "demo-thread-1";
 const ACTIVE_THREAD_KEY_PREFIX = "M_AGENT_ACTIVE_THREAD_ID:";
+const BUFFER_VIAL_MAX = 12;
 
 const threadStorageKey = (username: string) => {
   const safeUser = String(username || "").trim().toLowerCase();
@@ -81,6 +93,12 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [runtimeProfile, setRuntimeProfile] = useState("legacy");
+  const [sceneEntries, setSceneEntries] = useState<SceneEntry[]>([]);
+  const [scenePanelOpen, setScenePanelOpen] = useState(false);
+  const [transactions, setTransactions] = useState<ThinkLifeTransaction[]>([]);
+  const [activeTransactionId, setActiveTransactionId] = useState<string | null>(null);
+  const [cpuTransactionId, setCpuTransactionId] = useState<string | null>(null);
   const [isFlushing, setIsFlushing] = useState(false);
   const [flushStatus, setFlushStatus] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -100,6 +118,7 @@ export default function App() {
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleRefreshToken, setScheduleRefreshToken] = useState(0);
   const [wmPanelOpen, setWmPanelOpen] = useState(false);
+  const [dialogueUploadOpen, setDialogueUploadOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{
     file: File;
     previewUrl: string;
@@ -107,9 +126,21 @@ export default function App() {
     isUploading: boolean;
     blipCaption?: string;
   } | null>(null);
+  /** Think-life: turns in current flush segment (legacy uses pending_rounds). */
+  const [thinkLifeSegmentTurns, setThinkLifeSegmentTurns] = useState(0);
 
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
+  const streamingAssistantIdRef = useRef<string | null>(null);
+
+  const isThinkLife = runtimeProfile === "think_life";
+  const thinkLifePhase: ThinkLifeRuntimePhase = isThinkLife
+    ? thinkLifePhaseFromState(threadState?.think_life)
+    : "ready";
+  const showProcessing = isThinkLife ? isThinkLifeProcessing(thinkLifePhase) : isThinking;
+  const bufferVialCount = isThinkLife
+    ? thinkLifeSegmentTurns
+    : threadState?.pending_rounds || 0;
 
   const cleanupStreams = useCallback(() => {
     if (eventAbortControllerRef.current) {
@@ -133,12 +164,44 @@ export default function App() {
 
   const checkHealth = useCallback(async () => {
     try {
-      await chatApi.healthCheck();
+      const health = await chatApi.healthCheck();
+      const profile = String(health?.runtime?.runtime_profile || "legacy");
+      setRuntimeProfile(profile);
+      if (profile === "think_life") {
+        setScenePanelOpen(true);
+      }
       setIsBackendOnline(true);
     } catch {
       setIsBackendOnline(false);
     }
   }, []);
+
+  const fetchScene = useCallback(async () => {
+    if (!authUser || runtimeProfile !== "think_life") return;
+    try {
+      const scene = await chatApi.getScene(threadId, { limit: 80 });
+      setSceneEntries(scene.entries || []);
+    } catch {
+      // scene optional
+    }
+  }, [authUser, runtimeProfile, threadId]);
+
+  const fetchTransactions = useCallback(async () => {
+    if (!authUser || runtimeProfile !== "think_life") return;
+    try {
+      const payload = await chatApi.getTransactions(threadId);
+      setTransactions(payload.transactions || []);
+      setActiveTransactionId(payload.active_transaction_id ?? null);
+      setCpuTransactionId(payload.cpu_transaction_id ?? null);
+    } catch {
+      // optional until first stimulus
+    }
+  }, [authUser, runtimeProfile, threadId]);
+
+  const refreshThinkLifePanels = useCallback(() => {
+    void fetchScene();
+    void fetchTransactions();
+  }, [fetchScene, fetchTransactions]);
 
   const forceLogout = useCallback(async () => {
     cleanupStreams();
@@ -168,14 +231,16 @@ export default function App() {
     [forceLogout],
   );
 
-  const fetchThreadState = useCallback(async () => {
+  const fetchThreadState = useCallback(
+    async (options?: { syncMessages?: boolean }) => {
     if (!authUser) return;
+    const syncMessages = options?.syncMessages !== false;
     try {
       const state = await chatApi.getThreadState(threadId);
       setThreadState(state);
       setIsBackendOnline(true);
 
-      if (state.history_rounds_data) {
+      if (syncMessages && state.history_rounds_data) {
         const historyMessages: Message[] = [];
         state.history_rounds_data.forEach((round) => {
           if (round.source !== "schedule") {
@@ -200,7 +265,9 @@ export default function App() {
     } catch (err) {
       await handleApiError(err, "获取线程状态失败");
     }
-  }, [authUser, threadId, handleApiError]);
+  },
+    [authUser, threadId, handleApiError],
+  );
 
   const fetchDialogues = useCallback(async () => {
     if (!authUser) return;
@@ -256,18 +323,134 @@ export default function App() {
         case "tool_result":
           addThinkingLog(type, `工具返回: ${payload?.tool_name || payload?.tool || "unknown"}`, payload);
           break;
+        case "reply_emitted": {
+          const text = String(payload?.message || "");
+          const finalize = Boolean(payload?.finalize);
+          const streamId = streamingAssistantIdRef.current;
+          if (streamId) {
+            setMessages((prev) =>
+              prev.map((item) => (item.id === streamId ? { ...item, content: text || item.content } : item)),
+            );
+          } else {
+            const newId = `assistant-stream-${Date.now()}`;
+            streamingAssistantIdRef.current = newId;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId,
+                role: "assistant",
+                content: text,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          }
+          if (finalize) {
+            streamingAssistantIdRef.current = null;
+            if (!isThinkLife) {
+              setIsThinking(false);
+            }
+            void fetchThreadState({ syncMessages: !isThinkLife });
+            refreshThinkLifePanels();
+          }
+          break;
+        }
+        case "scene_entry_appended": {
+          const entry = payload as SceneEntry;
+          if (entry?.entry_type !== "reply") {
+            setSceneEntries((prev) => {
+              if (prev.some((item) => item.seq === entry.seq)) return prev;
+              return [...prev, entry].sort((a, b) => a.seq - b.seq);
+            });
+          }
+          if (isThinkLife && entry?.entry_type === "utterance" && entry.actor === "user" && entry.text) {
+            setMessages((prev) => {
+              const exists = prev.some(
+                (m) => m.role === "user" && m.content === entry.text && Math.abs(
+                  new Date(m.timestamp).getTime() - new Date(entry.occurred_at || 0).getTime(),
+                ) < 5000,
+              );
+              if (exists) return prev;
+              return [
+                ...prev,
+                {
+                  id: `scene-user-${entry.seq}`,
+                  role: "user",
+                  content: String(entry.text),
+                  timestamp: entry.occurred_at || new Date().toISOString(),
+                },
+              ];
+            });
+          }
+          refreshThinkLifePanels();
+          break;
+        }
+        case "stimulus_queued":
+          addThinkingLog(
+            type,
+            `刺激已入队 (pending=${payload?.pending_count ?? "?"}, phase=${payload?.runtime_phase ?? "?"})`,
+            payload,
+          );
+          setThreadState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  think_life: thinkLifeFromRuntimePayload({
+                    pending_stimuli: Number(
+                      payload?.pending_count ?? prev.think_life?.pending_stimuli ?? 0,
+                    ),
+                    runtime_phase: payload?.runtime_phase,
+                    effective_depth: payload?.effective_depth,
+                    busy: payload?.runtime_phase === "busy",
+                    busy_reason: String(payload?.runtime_phase || "queued"),
+                    runtime_profile: "think_life",
+                  }),
+                }
+              : prev,
+          );
+          refreshThinkLifePanels();
+          break;
+        case "thread_runtime_updated":
+          if (payload?.thread_runtime) {
+            const rt = payload.thread_runtime;
+            setThreadState((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    think_life: thinkLifeFromRuntimePayload(rt),
+                  }
+                : prev,
+            );
+            if (rt.active_transaction_id) {
+              setCpuTransactionId(String(rt.active_transaction_id));
+            }
+            if (!isThinkLifeProcessing(thinkLifePhaseFromState(thinkLifeFromRuntimePayload(rt)))) {
+              streamingAssistantIdRef.current = null;
+            }
+          }
+          refreshThinkLifePanels();
+          break;
+        case "thinking_started":
+        case "thinking_plan":
+        case "execution_started":
+        case "execution_completed":
+        case "thinking_summary":
+        case "thinking_completed":
+          addThinkingLog(type, type.replace(/_/g, " "), payload);
+          break;
         case "assistant_message":
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${Date.now()}`,
-              role: "assistant",
-              content: String(payload?.answer || ""),
-              timestamp: new Date().toISOString(),
-            },
-          ]);
-          setIsThinking(false);
-          fetchThreadState();
+          if (!isThinkLife) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `assistant-${Date.now()}`,
+                role: "assistant",
+                content: String(payload?.answer || ""),
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+            setIsThinking(false);
+            fetchThreadState();
+          }
           break;
         case "flush_started":
           setIsFlushing(true);
@@ -282,8 +465,14 @@ export default function App() {
           setIsFlushing(false);
           setFlushStatus(null);
           addThinkingLog(type, "Memory Flush Completed", payload);
-          fetchThreadState();
+          if (isThinkLife) {
+            setThinkLifeSegmentTurns(0);
+          }
+          fetchThreadState({ syncMessages: !isThinkLife });
           fetchDialogues();
+          if (isThinkLife) {
+            refreshThinkLifePanels();
+          }
           break;
         case "thread_state_updated":
           if (payload?.thread_state) {
@@ -320,7 +509,7 @@ export default function App() {
           }
       }
     },
-    [fetchDialogues, fetchThreadState],
+    [fetchDialogues, fetchThreadState, isThinkLife, refreshThinkLifePanels],
   );
 
   const setupThreadEventSource = useCallback(
@@ -392,9 +581,12 @@ export default function App() {
     }
     setSelectedDialogue(null);
     setSelectedDialogueId(null);
-    setIsThinking(true);
+    if (!isThinkLife) {
+      setIsThinking(true);
+    }
     setError(null);
     setThinkingLogs([]);
+    streamingAssistantIdRef.current = null;
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -439,6 +631,31 @@ export default function App() {
           ),
         );
       }
+
+      if (isThinkLife) {
+        const queued = await chatApi.submitStimulus(threadId, content, attachments);
+        setThinkLifeSegmentTurns((n) => Math.min(BUFFER_VIAL_MAX, n + 1));
+        clearSelectedImage();
+        addThinkingLog("stimulus_queued", `已入队: ${queued.stimulus_id}`, queued);
+        setThreadState((prev) =>
+          prev
+            ? {
+                ...prev,
+                think_life: thinkLifeFromRuntimePayload({
+                  pending_stimuli: Number(queued.pending_count ?? 0),
+                  runtime_phase: queued.runtime_phase,
+                  effective_depth: queued.effective_depth,
+                  busy: queued.runtime_phase === "busy",
+                  busy_reason: String(queued.runtime_phase || "queued"),
+                  runtime_profile: "think_life",
+                }),
+              }
+            : prev,
+        );
+        refreshThinkLifePanels();
+        return;
+      }
+
       const run = await chatApi.createRun(threadId, content, attachments);
       clearSelectedImage();
       addThinkingLog("run_started", `任务已启动: ${run.run_id}`);
@@ -494,9 +711,16 @@ export default function App() {
     try {
       setIsFlushing(true);
       setFlushStatus("INITIATING");
-      await chatApi.flushBuffer(threadId);
+      const result = await chatApi.flushBuffer(threadId);
+      addThinkingLog("flush", String(result?.message || "flush completed"), result);
+      if (isThinkLife) {
+        setThinkLifeSegmentTurns(0);
+        fetchThreadState({ syncMessages: false });
+        refreshThinkLifePanels();
+      }
     } catch (err) {
       await handleApiError(err, "刷新缓存失败");
+    } finally {
       setIsFlushing(false);
       setFlushStatus(null);
     }
@@ -537,6 +761,7 @@ export default function App() {
     setThreadId(newId);
     setMessages([]);
     setThinkingLogs([]);
+    setThinkLifeSegmentTurns(0);
     setSelectedDialogue(null);
     setSelectedDialogueId(null);
     clearSelectedImage();
@@ -635,9 +860,24 @@ export default function App() {
     }
     fetchThreadState();
     fetchDialogues();
+    fetchScene();
+    fetchTransactions();
+    if (runtimeProfile === "think_life") {
+      setScenePanelOpen(true);
+    }
     setupThreadEventSource(threadId);
     return cleanupStreams;
-  }, [authUser, threadId, fetchDialogues, fetchThreadState, setupThreadEventSource, cleanupStreams]);
+  }, [
+    authUser,
+    threadId,
+    runtimeProfile,
+    fetchDialogues,
+    fetchThreadState,
+    fetchScene,
+    fetchTransactions,
+    setupThreadEventSource,
+    cleanupStreams,
+  ]);
 
   return (
     <div className="flex h-screen w-full text-zinc-200 overflow-hidden font-sans selection:bg-cyan-500/30 relative">
@@ -675,6 +915,9 @@ export default function App() {
         <>
           <ThreadSidebar
             threadState={threadState}
+            runtimeProfile={runtimeProfile}
+            bufferVialCount={bufferVialCount}
+            bufferVialMax={BUFFER_VIAL_MAX}
             onNewThread={handleNewThread}
             onSelectRound={handleSelectRound}
             dialogues={dialogues}
@@ -683,16 +926,29 @@ export default function App() {
             selectedDialogue={selectedDialogue}
             selectedDialogueId={selectedDialogueId}
             onSelectDialogue={handleSelectDialogue}
+            onOpenDialogueUpload={() => setDialogueUploadOpen(true)}
             isFlushing={isFlushing}
             flushStatus={flushStatus}
             theme={theme}
+          />
+
+          <DialogueUploadModal
+            open={dialogueUploadOpen}
+            onClose={() => setDialogueUploadOpen(false)}
+            theme={theme}
+            onCompleted={() => {
+              fetchDialogues();
+            }}
+            onApiError={(message) => void handleApiError(new Error(message), "Dialogue 上传失败")}
           />
 
           <main className="flex-1 flex flex-col relative">
             <ChatInterface
               messages={messages}
               onSendMessage={handleSendMessage}
-              isThinking={isThinking}
+              isThinking={showProcessing}
+              runtimeProfile={runtimeProfile}
+              thinkLifePhase={thinkLifePhase}
               isFlushing={isFlushing}
               threadState={threadState}
               onFlush={handleFlush}
@@ -702,7 +958,15 @@ export default function App() {
               theme={theme}
               isBackendOnline={isBackendOnline}
               onOpenSchedules={() => setIsScheduleOpen(true)}
-              onOpenWorkingMemory={() => setWmPanelOpen(true)}
+              onOpenWorkingMemory={() => {
+                setWmPanelOpen(true);
+                if (isThinkLife) void fetchTransactions();
+              }}
+              sceneEntryCount={sceneEntries.length}
+              onOpenScene={() => {
+                setScenePanelOpen(true);
+                refreshThinkLifePanels();
+              }}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onLogout={handleLogout}
               authLabel={authUser.display_name || authUser.username}
@@ -720,11 +984,31 @@ export default function App() {
               onClearImage={clearSelectedImage}
             />
 
-            <WorkingMemoryFloatingPanel
-              wm={threadState?.working_memory}
-              open={wmPanelOpen}
-              onClose={() => setWmPanelOpen(false)}
+            {isThinkLife ? (
+              <ThinkLifeWmPanel
+                transactions={transactions}
+                activeTransactionId={activeTransactionId}
+                cpuTransactionId={cpuTransactionId}
+                open={wmPanelOpen}
+                onClose={() => setWmPanelOpen(false)}
+                onRefresh={() => void fetchTransactions()}
+                theme={theme}
+              />
+            ) : (
+              <WorkingMemoryFloatingPanel
+                wm={threadState?.working_memory}
+                open={wmPanelOpen}
+                onClose={() => setWmPanelOpen(false)}
+                theme={theme}
+              />
+            )}
+
+            <SceneTimelinePanel
+              entries={sceneEntries}
+              open={scenePanelOpen && isThinkLife}
+              onClose={() => setScenePanelOpen(false)}
               theme={theme}
+              initialPosition={{ left: 56, top: 200 }}
             />
 
             <AnimatePresence>
@@ -766,7 +1050,7 @@ export default function App() {
             </AnimatePresence>
           </main>
 
-          <ThinkingPanel logs={thinkingLogs} isThinking={isThinking} theme={theme} />
+          <ThinkingPanel logs={thinkingLogs} isThinking={showProcessing} theme={theme} />
 
           <SettingsModal
             isOpen={isSettingsOpen}

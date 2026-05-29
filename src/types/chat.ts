@@ -10,6 +10,19 @@ export interface WorkingMemoryState {
   entries?: Record<string, unknown>[];
 }
 
+export type ThinkLifeRuntimePhase = "ready" | "processing" | "busy";
+
+export interface ThreadThinkLifeState {
+  pending_stimuli: number;
+  busy: boolean;
+  busy_reason: string;
+  runtime_profile?: string;
+  runtime_phase?: ThinkLifeRuntimePhase;
+  effective_depth?: number;
+  in_flight_stimulus_id?: string | null;
+  preempt_enabled?: boolean;
+}
+
 export interface ThreadState {
   thread_id: string;
   mode: MemoryMode;
@@ -25,6 +38,76 @@ export interface ThreadState {
   history_rounds_data?: HistoryRound[];
   history_preview?: HistoryRound[];
   working_memory?: WorkingMemoryState;
+  think_life?: ThreadThinkLifeState;
+}
+
+export interface SceneEntry {
+  seq: number;
+  occurred_at: string;
+  entry_type: string;
+  actor: string;
+  text: string;
+  transaction_id?: string | null;
+  delegate_id?: string | null;
+  tool_name?: string | null;
+}
+
+export interface SceneListResponse {
+  thread_id: string;
+  entries: SceneEntry[];
+  has_more: boolean;
+}
+
+export interface ThreadRuntimeStatus {
+  thread_id: string;
+  busy: boolean;
+  busy_reason: string;
+  busy_since_at?: string | null;
+  pending_stimuli: number;
+  drainer_active?: boolean;
+  runtime_profile?: string;
+  active_transaction_id?: string | null;
+  runtime_phase?: ThinkLifeRuntimePhase;
+  effective_depth?: number;
+  in_flight_stimulus_id?: string | null;
+  preempt_enabled?: boolean;
+}
+
+export interface StimulusSubmitResponse {
+  stimulus_id: string;
+  thread_id: string;
+  pending_count: number;
+  accepted: boolean;
+  runtime_phase?: ThinkLifeRuntimePhase;
+  effective_depth?: number;
+}
+
+export interface ThinkLifeTransaction {
+  transaction_id: string;
+  thread_id: string;
+  status: string;
+  kind: string;
+  priority: number;
+  wm_entries: Record<string, unknown>[];
+  wm_entry_count: number;
+  think_rounds: number;
+  delegate_count: number;
+  active_delegate_id?: string | null;
+  schedule_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  terminal_at?: string | null;
+  last_error?: string | null;
+  is_active_user: boolean;
+  is_cpu_holder: boolean;
+}
+
+export interface ThinkLifeTransactionsResponse {
+  thread_id: string;
+  transactions: ThinkLifeTransaction[];
+  active_transaction_id?: string | null;
+  cpu_transaction_id?: string | null;
+  transaction_count: number;
 }
 
 export interface HistoryRound {
@@ -124,6 +207,17 @@ export interface DialogueTurn {
   mime_type?: string | null;
   width?: number | null;
   height?: number | null;
+}
+
+export interface DialogueUploadCompletePayload {
+  success: boolean;
+  imported_count: number;
+  error_count: number;
+  imported?: Array<Record<string, unknown>>;
+  rejected?: Array<{ filename: string; errors: Array<{ code: string; message: string }> }>;
+  errors?: Array<Record<string, unknown>>;
+  episodic?: Record<string, unknown>;
+  episodic_persistence?: Record<string, unknown>;
 }
 
 export interface DialogueDetail {
@@ -229,7 +323,19 @@ export interface ScheduleListResponse {
 
 export interface ScheduleHeartbeatStatus {
   enabled: boolean;
+  status?: string;
   worker_alive: boolean;
+  worker?: { alive: boolean; created_at?: string | null };
+  scheduler?: {
+    beat_interval_seconds?: number;
+    next_beat_due_at?: string | null;
+    busy_retry_seconds?: number;
+  };
+  counters?: {
+    beats_total?: number;
+    schedule_busy_retries_total?: number;
+    schedule_leased_total?: number;
+  };
   created_at?: string | null;
   beat_interval_seconds: number;
   interval_seconds?: number;
@@ -251,4 +357,5 @@ export interface ScheduleHeartbeatResponse {
   thread_id: string;
   scope?: "owner" | "thread";
   heartbeat: ScheduleHeartbeatStatus;
+  thread_runtime?: ThreadRuntimeStatus;
 }

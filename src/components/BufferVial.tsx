@@ -8,14 +8,18 @@ interface BufferVialProps {
   isFlushing?: boolean;
   flushStatus?: string | null;
   theme?: "dark" | "light";
+  unitLabel?: string;
+  headerLabel?: string;
 }
 
-export const BufferVial: React.FC<BufferVialProps> = ({ 
-  pendingCount, 
+export const BufferVial: React.FC<BufferVialProps> = ({
+  pendingCount,
   maxCount = 10,
   isFlushing = false,
   flushStatus = null,
-  theme = "dark"
+  theme = "dark",
+  unitLabel = "Units",
+  headerLabel = "Buffer",
 }) => {
   const [displayHeight, setDisplayHeight] = useState(0);
   const [rotation, setRotation] = useState(0);
@@ -24,7 +28,8 @@ export const BufferVial: React.FC<BufferVialProps> = ({
   const [displayCount, setDisplayCount] = useState(pendingCount);
   
   const prevFlushingRef = useRef(isFlushing);
-  const targetHeight = (pendingCount / maxCount) * 100;
+  const clampedCount = Math.min(Math.max(pendingCount, 0), maxCount);
+  const targetHeight = (clampedCount / maxCount) * 100;
 
   // Sync display count when not pouring or flushing
   useEffect(() => {
@@ -100,7 +105,7 @@ export const BufferVial: React.FC<BufferVialProps> = ({
             "w-1 h-1 rounded-full animate-pulse",
             theme === 'dark' ? "bg-purple-400" : "bg-purple-600"
           )} />
-          Buffer
+          {headerLabel}
         </div>
         <div className="flex items-baseline gap-1">
           <span className={cn(
@@ -109,7 +114,7 @@ export const BufferVial: React.FC<BufferVialProps> = ({
           )}>
             {displayCount}
           </span>
-          <span className="text-[7px] uppercase text-zinc-600 tracking-tighter">Units</span>
+          <span className="text-[7px] uppercase text-zinc-600 tracking-tighter">{unitLabel}</span>
         </div>
       </div>
 
