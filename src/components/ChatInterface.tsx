@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ScrollText, ImagePlus, X } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ScrollText, ImagePlus, X, Square } from "lucide-react";
 import { Message, ThreadState, ThinkLifeRuntimePhase } from "../types/chat";
 import { cn } from "../lib/utils";
 import { thinkLifePhaseLabel } from "../lib/thinkLifeRuntime";
@@ -76,6 +76,8 @@ interface ChatInterfaceProps {
   isFlushing: boolean;
   threadState: ThreadState | null;
   onFlush: () => void;
+  onStopThinking?: () => void;
+  isStoppingThinking?: boolean;
   onToggleMode: () => void;
   onToggleTheme: () => void;
   onRetry: () => void;
@@ -107,6 +109,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isFlushing,
   threadState,
   onFlush,
+  onStopThinking,
+  isStoppingThinking = false,
   onToggleMode,
   onToggleTheme,
   onRetry,
@@ -209,7 +213,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
-          {(threadState?.has_pending_data || isThinkLife) && (
+          {isThinking && onStopThinking && (
+            <button
+              type="button"
+              onClick={onStopThinking}
+              disabled={isStoppingThinking}
+              className={cn(
+                "p-1.5 rounded-sm border transition-colors",
+                theme === 'dark'
+                  ? "border-rose-900/60 text-rose-400 hover:bg-rose-950/30"
+                  : "border-rose-200 text-rose-600 hover:bg-rose-50",
+                isStoppingThinking && "opacity-50 cursor-not-allowed",
+              )}
+              title="Force stop thinking"
+            >
+              {isStoppingThinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+            </button>
+          )}
+          {threadState?.has_pending_data && (
             <motion.button
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -229,7 +250,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {isFlushing
                 ? "FLUSHING..."
                 : isThinkLife
-                  ? "FLUSH SEGMENT"
+                  ? `FLUSH SEGMENT (${threadState?.scene_pending_turns ?? 0})`
                   : `FLUSH BUFFER (${threadState?.pending_rounds ?? 0})`}
             </motion.button>
           )}

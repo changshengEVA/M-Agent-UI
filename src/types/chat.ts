@@ -31,6 +31,9 @@ export interface ThreadState {
   pending_rounds: number;
   pending_turns: number;
   has_pending_data: boolean;
+  scene_pending_entries?: number;
+  scene_pending_turns?: number;
+  active_user_segment?: boolean;
   last_activity_at: string | null;
   last_flush_at: string | null;
   idle_flush_seconds: number;
@@ -80,6 +83,18 @@ export interface StimulusSubmitResponse {
   accepted: boolean;
   runtime_phase?: ThinkLifeRuntimePhase;
   effective_depth?: number;
+}
+
+export interface StopThinkingResponse {
+  success: boolean;
+  thread_id: string;
+  runtime_profile?: string;
+  cancelled_in_flight?: boolean;
+  cleared_pending_stimuli?: number;
+  cleared_pending_user_turns?: number;
+  cancelled_transactions?: string[];
+  thread_state?: ThreadState;
+  thread_runtime?: ThreadRuntimeStatus;
 }
 
 export interface ThinkLifeTransaction {

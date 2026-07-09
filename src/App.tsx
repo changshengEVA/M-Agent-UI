@@ -93,6 +93,8 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [isStoppingThinking, setIsStoppingThinking] = useState(false);
+  const [stopRequested, setStopRequested] = useState(false);
   const [runtimeProfile, setRuntimeProfile] = useState("legacy");
   const [sceneEntries, setSceneEntries] = useState<SceneEntry[]>([]);
   const [scenePanelOpen, setScenePanelOpen] = useState(false);
@@ -133,13 +135,15 @@ export default function App() {
   const threadAbortControllerRef = useRef<AbortController | null>(null);
   const streamingAssistantIdRef = useRef<string | null>(null);
 
-  const isThinkLife = runtimeProfile === "think_life";
+  const isThinkLife =
+    runtimeProfile === "think_life" ||
+    threadState?.think_life?.runtime_profile === "think_life";
   const thinkLifePhase: ThinkLifeRuntimePhase = isThinkLife
     ? thinkLifePhaseFromState(threadState?.think_life)
     : "ready";
-  const showProcessing = isThinkLife ? isThinkLifeProcessing(thinkLifePhase) : isThinking;
+  const showProcessing = stopRequested ? false : isThinkLife ? isThinkLifeProcessing(thinkLifePhase) : isThinking;
   const bufferVialCount = isThinkLife
-    ? thinkLifeSegmentTurns
+    ? threadState?.scene_pending_turns ?? thinkLifeSegmentTurns
     : threadState?.pending_rounds || 0;
 
   const cleanupStreams = useCallback(() => {
@@ -177,17 +181,23 @@ export default function App() {
   }, []);
 
   const fetchScene = useCallback(async () => {
-    if (!authUser || runtimeProfile !== "think_life") return;
+    if (!authUser) return;
+    const profile =
+      runtimeProfile === "think_life" ? "think_life" : threadState?.think_life?.runtime_profile;
+    if (profile !== "think_life") return;
     try {
       const scene = await chatApi.getScene(threadId, { limit: 80 });
       setSceneEntries(scene.entries || []);
     } catch {
       // scene optional
     }
-  }, [authUser, runtimeProfile, threadId]);
+  }, [authUser, runtimeProfile, threadId, threadState?.think_life?.runtime_profile]);
 
   const fetchTransactions = useCallback(async () => {
-    if (!authUser || runtimeProfile !== "think_life") return;
+    if (!authUser) return;
+    const profile =
+      runtimeProfile === "think_life" ? "think_life" : threadState?.think_life?.runtime_profile;
+    if (profile !== "think_life") return;
     try {
       const payload = await chatApi.getTransactions(threadId);
       setTransactions(payload.transactions || []);
@@ -196,7 +206,7 @@ export default function App() {
     } catch {
       // optional until first stimulus
     }
-  }, [authUser, runtimeProfile, threadId]);
+  }, [authUser, runtimeProfile, threadId, threadState?.think_life?.runtime_profile]);
 
   const refreshThinkLifePanels = useCallback(() => {
     void fetchScene();
@@ -215,6 +225,8 @@ export default function App() {
     setMessages([]);
     setThinkingLogs([]);
     setIsThinking(false);
+    setIsStoppingThinking(false);
+    setStopRequested(false);
     setIsFlushing(false);
     setFlushStatus(null);
     setIsScheduleOpen(false);
@@ -238,6 +250,11 @@ export default function App() {
     try {
       const state = await chatApi.getThreadState(threadId);
       setThreadState(state);
+      const tlProfile = String(state?.think_life?.runtime_profile || "").trim();
+      if (tlProfile === "think_life") {
+        setRuntimeProfile("think_life");
+        setScenePanelOpen(true);
+      }
       setIsBackendOnline(true);
 
       if (syncMessages && state.history_rounds_data) {
@@ -385,6 +402,7 @@ export default function App() {
           break;
         }
         case "stimulus_queued":
+          setStopRequested(false);
           addThinkingLog(
             type,
             `刺激已入队 (pending=${payload?.pending_count ?? "?"}, phase=${payload?.runtime_phase ?? "?"})`,
@@ -425,17 +443,29 @@ export default function App() {
             }
             if (!isThinkLifeProcessing(thinkLifePhaseFromState(thinkLifeFromRuntimePayload(rt)))) {
               streamingAssistantIdRef.current = null;
+              setStopRequested(false);
             }
           }
           refreshThinkLifePanels();
           break;
         case "thinking_started":
+          setStopRequested(false);
+          addThinkingLog(type, type.replace(/_/g, " "), payload);
+          break;
         case "thinking_plan":
         case "execution_started":
         case "execution_completed":
         case "thinking_summary":
         case "thinking_completed":
           addThinkingLog(type, type.replace(/_/g, " "), payload);
+          break;
+        case "thinking_force_stopped":
+          setIsThinking(false);
+          setIsStoppingThinking(false);
+          setStopRequested(true);
+          streamingAssistantIdRef.current = null;
+          addThinkingLog(type, "Thinking force stopped", payload);
+          refreshThinkLifePanels();
           break;
         case "assistant_message":
           if (!isThinkLife) {
@@ -581,6 +611,7 @@ export default function App() {
     }
     setSelectedDialogue(null);
     setSelectedDialogueId(null);
+    setStopRequested(false);
     if (!isThinkLife) {
       setIsThinking(true);
     }
@@ -699,10 +730,54 @@ export default function App() {
           }
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        setIsThinking(false);
+        return;
+      }
       await handleApiError(err, "发送消息失败");
       setIsThinking(false);
       setSelectedImage((prev) => (prev ? { ...prev, isUploading: false } : prev));
+    }
+  };
+
+  const handleStopThinking = async () => {
+    if (!authUser || isStoppingThinking || !showProcessing) return;
+    setIsStoppingThinking(true);
+    setStopRequested(true);
+    setIsThinking(false);
+    streamingAssistantIdRef.current = null;
+    if (eventAbortControllerRef.current) {
+      eventAbortControllerRef.current.abort();
+      eventAbortControllerRef.current = null;
+    }
+    try {
+      const result = await chatApi.stopThinking(threadId);
+      addThinkingLog("thinking_force_stopped", "Thinking force stopped", result);
+      if (result.thread_state) {
+        const stoppedState = {
+          ...result.thread_state,
+          think_life: result.thread_state.think_life
+            ? {
+                ...result.thread_state.think_life,
+                pending_stimuli: 0,
+                busy: false,
+                busy_reason: "idle",
+                runtime_phase: "ready" as ThinkLifeRuntimePhase,
+                effective_depth: 0,
+                in_flight_stimulus_id: null,
+              }
+            : result.thread_state.think_life,
+        };
+        setThreadState(stoppedState);
+      }
+      refreshThinkLifePanels();
+      void fetchThreadState({ syncMessages: false });
+    } catch (err) {
+      setStopRequested(false);
+      await handleApiError(err, "Force stop thinking failed");
+    } finally {
+      setIsStoppingThinking(false);
     }
   };
 
@@ -761,6 +836,7 @@ export default function App() {
     setThreadId(newId);
     setMessages([]);
     setThinkingLogs([]);
+    setStopRequested(false);
     setThinkLifeSegmentTurns(0);
     setSelectedDialogue(null);
     setSelectedDialogueId(null);
@@ -899,6 +975,7 @@ export default function App() {
               setSelectedDialogue(null);
               setSelectedDialogueId(null);
               clearSelectedImage();
+              void checkHealth();
             }}
           />
           <SettingsModal
@@ -952,6 +1029,8 @@ export default function App() {
               isFlushing={isFlushing}
               threadState={threadState}
               onFlush={handleFlush}
+              onStopThinking={handleStopThinking}
+              isStoppingThinking={isStoppingThinking}
               onToggleMode={handleToggleMode}
               onToggleTheme={handleToggleTheme}
               onRetry={handleRetry}

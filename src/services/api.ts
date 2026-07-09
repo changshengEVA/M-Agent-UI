@@ -10,6 +10,7 @@ import {
   ScheduleItem,
   ScheduleListResponse,
   SceneListResponse,
+  StopThinkingResponse,
   StimulusSubmitResponse,
   ThinkLifeTransactionsResponse,
   ThreadState,
@@ -214,8 +215,13 @@ export const chatApi = {
     return parseJsonOrThrow<ThinkLifeTransactionsResponse>(res);
   },
 
-  async getScene(threadId: string, params?: { limit?: number; before_seq?: number }): Promise<SceneListResponse> {
+  async getScene(
+    threadId: string,
+    params?: { limit?: number; before_seq?: number; since_flush?: boolean },
+  ): Promise<SceneListResponse> {
     const search = new URLSearchParams();
+    if (params?.since_flush !== false) search.set("since_flush", "true");
+    else search.set("since_flush", "false");
     if (typeof params?.limit === "number") search.set("limit", String(params.limit));
     if (typeof params?.before_seq === "number") search.set("before_seq", String(params.before_seq));
     const query = search.toString();
@@ -364,6 +370,16 @@ export const chatApi = {
       body: JSON.stringify({ reason }),
     });
     return parseJsonOrThrow<any>(res);
+  },
+
+  async stopThinking(threadId: string): Promise<StopThinkingResponse> {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/thinking/stop`, {
+      method: "POST",
+      headers: buildHeaders({ withAuth: true }),
+      mode: "cors",
+    });
+    return parseJsonOrThrow<StopThinkingResponse>(res);
   },
 
   async listSchedules(
