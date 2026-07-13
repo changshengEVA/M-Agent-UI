@@ -1,22 +1,21 @@
 import React from "react";
 import { motion } from "motion/react";
-import { Database, History, MessageSquare, Plus, Archive, Upload } from "lucide-react";
+import { Database, History, Plus, Archive, Upload } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { BufferVial } from "./BufferVial";
 import { cn } from "../lib/utils";
-import { DialogueDetail, DialogueSummary, HistoryRound, ThreadState } from "../types/chat";
+import { DialogueSummary, HistoryRound, ThreadState } from "../types/chat";
 
 interface ThreadSidebarProps {
   threadState: ThreadState | null;
   runtimeProfile?: string;
   bufferVialCount?: number;
   bufferVialMax?: number;
-  onNewThread: () => void;
+  onNewConversation: () => void;
   onSelectRound: (round: HistoryRound) => void;
   dialogues: DialogueSummary[];
   dialoguesLoading: boolean;
   dialoguesError: string | null;
-  selectedDialogue: DialogueDetail | null;
   selectedDialogueId: string | null;
   onSelectDialogue: (dialogue: DialogueSummary) => void;
   onOpenDialogueUpload?: () => void;
@@ -30,12 +29,11 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
   runtimeProfile = "legacy",
   bufferVialCount,
   bufferVialMax = 12,
-  onNewThread,
+  onNewConversation,
   onSelectRound,
   dialogues,
   dialoguesLoading,
   dialoguesError,
-  selectedDialogue,
   selectedDialogueId,
   onSelectDialogue,
   onOpenDialogueUpload,
@@ -45,7 +43,8 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
 }) => {
   const isThinkLife = runtimeProfile === "think_life";
   const vialCount = bufferVialCount ?? threadState?.pending_rounds ?? 0;
-  const blockNewThread = isFlushing || (!isThinkLife && (threadState?.pending_rounds || 0) > 0);
+  const blockNewConversation =
+    isFlushing || threadState === null || Boolean(threadState.has_pending_data);
 
   return (
     <div
@@ -61,27 +60,27 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
         )}
       >
         <button
-          onClick={onNewThread}
-          disabled={blockNewThread}
+          onClick={onNewConversation}
+          disabled={blockNewConversation}
           className={cn(
             "w-full flex items-center justify-center gap-2 py-2 rounded-sm font-bold uppercase tracking-widest transition-all group",
-            blockNewThread
+            blockNewConversation
               ? "bg-zinc-500/10 border-zinc-500/20 text-zinc-500 cursor-not-allowed opacity-50"
               : "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20",
           )}
           title={
-            blockNewThread
-              ? "Please wait until buffer flush completes before starting a new thread"
+            blockNewConversation
+              ? "Flush the current conversation before starting a new one"
               : "Start a new conversation"
           }
         >
           <Plus
             className={cn(
               "w-4 h-4 transition-transform",
-              !blockNewThread && "group-hover:rotate-90",
+              !blockNewConversation && "group-hover:rotate-90",
             )}
           />
-          New Thread
+          New Conversation
         </button>
       </div>
 
@@ -238,37 +237,6 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
             </div>
           )}
         </div>
-
-        {selectedDialogue && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-zinc-500 uppercase font-bold tracking-tighter text-[9px]">
-              <MessageSquare className="w-3 h-3" />
-              Dialogue Preview
-            </div>
-            <div
-              className={cn(
-                "p-2 rounded-sm border space-y-2 max-h-56 overflow-y-auto",
-                theme === "dark" ? "border-zinc-800 bg-zinc-950/40" : "border-zinc-200 bg-zinc-50",
-              )}
-            >
-              {selectedDialogue.turns.slice(0, 12).map((turn) => (
-                <div key={`${selectedDialogue.dialogue_id}-${turn.turn_id}`} className="space-y-1">
-                  <div className="text-[9px] uppercase tracking-widest text-zinc-500">
-                    {turn.speaker || "unknown"} {turn.timestamp ? `@ ${new Date(turn.timestamp).toLocaleTimeString()}` : ""}
-                  </div>
-                  <p className={cn("text-[11px] leading-relaxed", theme === "dark" ? "text-zinc-200" : "text-zinc-800")}>
-                    {turn.text}
-                  </p>
-                </div>
-              ))}
-              {selectedDialogue.turns.length > 12 && (
-                <p className="text-[10px] text-zinc-500">
-                  ... {selectedDialogue.turns.length - 12} more turns
-                </p>
-              )}
-            </div>
-          </div>
-        )}
 
       </div>
 

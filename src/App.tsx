@@ -89,6 +89,32 @@ const turnToAttachments = (turn?: {
   ];
 };
 
+const dialogueToMessages = (detail: DialogueDetail, user: AuthUser): Message[] => {
+  const userSpeakers = new Set(
+    [
+      detail.user_id,
+      detail.participants?.[0],
+      user.username,
+      user.display_name,
+      "user",
+      "human",
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const fallbackTimestamp = String(detail.meta?.start_time || new Date().toISOString());
+
+  return (detail.turns || []).map((turn, index) => ({
+    id: `dialogue-${detail.dialogue_id}-${turn.turn_id ?? index}`,
+    role: userSpeakers.has(String(turn.speaker || "").trim().toLowerCase())
+      ? "user"
+      : "assistant",
+    content: String(turn.text || ""),
+    timestamp: String(turn.timestamp || fallbackTimestamp),
+    attachments: turnToAttachments(turn),
+  }));
+};
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
@@ -115,7 +141,6 @@ export default function App() {
   const [dialogues, setDialogues] = useState<DialogueSummary[]>([]);
   const [dialoguesLoading, setDialoguesLoading] = useState(false);
   const [dialoguesError, setDialoguesError] = useState<string | null>(null);
-  const [selectedDialogue, setSelectedDialogue] = useState<DialogueDetail | null>(null);
   const [selectedDialogueId, setSelectedDialogueId] = useState<string | null>(null);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [scheduleRefreshToken, setScheduleRefreshToken] = useState(0);
@@ -134,6 +159,8 @@ export default function App() {
   const eventAbortControllerRef = useRef<AbortController | null>(null);
   const threadAbortControllerRef = useRef<AbortController | null>(null);
   const streamingAssistantIdRef = useRef<string | null>(null);
+  const selectedDialogueIdRef = useRef<string | null>(null);
+  const dialogueRequestIdRef = useRef(0);
 
   const isThinkLife =
     runtimeProfile === "think_life" ||
@@ -220,7 +247,8 @@ export default function App() {
     setThreadState(null);
     setDialogues([]);
     setDialoguesError(null);
-    setSelectedDialogue(null);
+    selectedDialogueIdRef.current = null;
+    dialogueRequestIdRef.current += 1;
     setSelectedDialogueId(null);
     setMessages([]);
     setThinkingLogs([]);
@@ -257,9 +285,9 @@ export default function App() {
       }
       setIsBackendOnline(true);
 
-      if (syncMessages && state.history_rounds_data) {
+      if (syncMessages && !selectedDialogueIdRef.current) {
         const historyMessages: Message[] = [];
-        state.history_rounds_data.forEach((round) => {
+        (state.history_rounds_data || []).forEach((round) => {
           if (round.source !== "schedule") {
             historyMessages.push({
               id: `${round.round_id}-user`,
@@ -277,7 +305,17 @@ export default function App() {
             attachments: turnToAttachments(round.assistant_turn),
           });
         });
-        setMessages(historyMessages);
+        const restoredMessages: Message[] = historyMessages.length
+          ? historyMessages
+          : (state.conversation_messages || []).map((message) => ({
+              id: message.message_id,
+              role: message.role,
+              content: message.content,
+              timestamp: message.timestamp,
+            }));
+        if (restoredMessages.length > 0) {
+          setMessages(restoredMessages);
+        }
       }
     } catch (err) {
       await handleApiError(err, "获取线程状态失败");
@@ -344,7 +382,9 @@ export default function App() {
           const text = String(payload?.message || "");
           const finalize = Boolean(payload?.finalize);
           const streamId = streamingAssistantIdRef.current;
-          if (streamId) {
+          if (selectedDialogueIdRef.current) {
+            // Keep the archived transcript stable while live events continue in the background.
+          } else if (streamId) {
             setMessages((prev) =>
               prev.map((item) => (item.id === streamId ? { ...item, content: text || item.content } : item)),
             );
@@ -381,6 +421,7 @@ export default function App() {
           }
           if (isThinkLife && entry?.entry_type === "utterance" && entry.actor === "user" && entry.text) {
             setMessages((prev) => {
+              if (selectedDialogueIdRef.current) return prev;
               const exists = prev.some(
                 (m) => m.role === "user" && m.content === entry.text && Math.abs(
                   new Date(m.timestamp).getTime() - new Date(entry.occurred_at || 0).getTime(),
@@ -469,15 +510,19 @@ export default function App() {
           break;
         case "assistant_message":
           if (!isThinkLife) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                content: String(payload?.answer || ""),
-                timestamp: new Date().toISOString(),
-              },
-            ]);
+            setMessages((prev) =>
+              selectedDialogueIdRef.current
+                ? prev
+                : [
+                    ...prev,
+                    {
+                      id: `assistant-${Date.now()}`,
+                      role: "assistant",
+                      content: String(payload?.answer || ""),
+                      timestamp: new Date().toISOString(),
+                    },
+                  ],
+            );
             setIsThinking(false);
             fetchThreadState();
           }
@@ -609,7 +654,8 @@ export default function App() {
       setError("请先登录");
       return;
     }
-    setSelectedDialogue(null);
+    selectedDialogueIdRef.current = null;
+    dialogueRequestIdRef.current += 1;
     setSelectedDialogueId(null);
     setStopRequested(false);
     if (!isThinkLife) {
@@ -831,38 +877,64 @@ export default function App() {
     });
   };
 
-  const handleNewThread = () => {
-    const newId = `thread-${Math.random().toString(36).slice(2, 8)}`;
-    setThreadId(newId);
+  const handleNewConversation = () => {
+    if (!threadState || isFlushing || threadState.has_pending_data) return;
+    selectedDialogueIdRef.current = null;
+    dialogueRequestIdRef.current += 1;
     setMessages([]);
     setThinkingLogs([]);
     setStopRequested(false);
     setThinkLifeSegmentTurns(0);
-    setSelectedDialogue(null);
     setSelectedDialogueId(null);
+    setSceneEntries([]);
     clearSelectedImage();
+    void fetchThreadState();
+    refreshThinkLifePanels();
   };
 
   const handleSelectRound = (round: HistoryRound) => {
     addThinkingLog("history_recall", `Inspecting round: ${round.round_id}`, round);
   };
 
+  const handleExitStoredDialogue = () => {
+    selectedDialogueIdRef.current = null;
+    dialogueRequestIdRef.current += 1;
+    setSelectedDialogueId(null);
+    setMessages([]);
+    void fetchThreadState();
+  };
+
   const handleSelectDialogue = async (item: DialogueSummary) => {
     if (!authUser) return;
+    if (selectedDialogueIdRef.current === item.dialogue_id) {
+      handleExitStoredDialogue();
+      return;
+    }
+    const requestId = dialogueRequestIdRef.current + 1;
+    dialogueRequestIdRef.current = requestId;
+    selectedDialogueIdRef.current = item.dialogue_id;
     setSelectedDialogueId(item.dialogue_id);
+    setMessages([]);
+    clearSelectedImage();
     setDialoguesError(null);
     try {
       const detail = await chatApi.getDialogue(item.dialogue_id);
-      setSelectedDialogue(detail);
+      if (dialogueRequestIdRef.current !== requestId) return;
+      setMessages(dialogueToMessages(detail, authUser));
       addThinkingLog("dialogue_loaded", `Loaded stored dialogue: ${item.dialogue_id}`, {
         dialogue_id: item.dialogue_id,
         turn_count: detail.turn_count,
       });
     } catch (err: any) {
+      if (dialogueRequestIdRef.current !== requestId) return;
+      selectedDialogueIdRef.current = null;
+      setSelectedDialogueId(null);
       const message = String(err?.message || "Failed to load dialogue detail");
       setDialoguesError(message);
       if (message.startsWith("[401]")) {
         await forceLogout();
+      } else {
+        void fetchThreadState();
       }
     }
   };
@@ -972,7 +1044,8 @@ export default function App() {
               setError(null);
               setMessages([]);
               setThinkingLogs([]);
-              setSelectedDialogue(null);
+              selectedDialogueIdRef.current = null;
+              dialogueRequestIdRef.current += 1;
               setSelectedDialogueId(null);
               clearSelectedImage();
               void checkHealth();
@@ -995,12 +1068,11 @@ export default function App() {
             runtimeProfile={runtimeProfile}
             bufferVialCount={bufferVialCount}
             bufferVialMax={BUFFER_VIAL_MAX}
-            onNewThread={handleNewThread}
+            onNewConversation={handleNewConversation}
             onSelectRound={handleSelectRound}
             dialogues={dialogues}
             dialoguesLoading={dialoguesLoading}
             dialoguesError={dialoguesError}
-            selectedDialogue={selectedDialogue}
             selectedDialogueId={selectedDialogueId}
             onSelectDialogue={handleSelectDialogue}
             onOpenDialogueUpload={() => setDialogueUploadOpen(true)}
@@ -1061,6 +1133,8 @@ export default function App() {
               }
               onSelectImage={handleSelectImage}
               onClearImage={clearSelectedImage}
+              readOnlyDialogueId={selectedDialogueId}
+              onExitReadOnly={handleExitStoredDialogue}
             />
 
             {isThinkLife ? (

@@ -315,10 +315,14 @@ export const chatApi = {
         const jsonStr = dataLine.slice(6).trim();
         if (!jsonStr) continue;
         try {
-          const event = JSON.parse(jsonStr) as { type: string; payload?: DialogueUploadCompletePayload };
+          const event = JSON.parse(jsonStr) as {
+            type: string;
+            seq?: number;
+            payload?: Record<string, unknown>;
+          };
           options?.onEvent?.(event);
           if (event.type === "upload_completed" && event.payload) {
-            completed = event.payload as DialogueUploadCompletePayload;
+            completed = event.payload as unknown as DialogueUploadCompletePayload;
           }
           if (event.type === "upload_failed") {
             throw new Error(String((event as any).payload?.message || "upload failed"));

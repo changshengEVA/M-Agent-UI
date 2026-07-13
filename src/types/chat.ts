@@ -25,6 +25,7 @@ export interface ThreadThinkLifeState {
 
 export interface ThreadState {
   thread_id: string;
+  conversation_id?: string;
   mode: MemoryMode;
   history_rounds: number;
   history_messages: number;
@@ -40,8 +41,16 @@ export interface ThreadState {
   idle_flush_deadline: string | null;
   history_rounds_data?: HistoryRound[];
   history_preview?: HistoryRound[];
+  conversation_messages?: ConversationMessage[];
   working_memory?: WorkingMemoryState;
   think_life?: ThreadThinkLifeState;
+}
+
+export interface ConversationMessage {
+  message_id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
 }
 
 export interface SceneEntry {

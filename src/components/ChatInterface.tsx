@@ -98,6 +98,8 @@ interface ChatInterfaceProps {
   } | null;
   onSelectImage?: (file: File | null) => void;
   onClearImage?: () => void;
+  readOnlyDialogueId?: string | null;
+  onExitReadOnly?: () => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -126,15 +128,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   selectedImage,
   onSelectImage,
   onClearImage,
+  readOnlyDialogueId = null,
+  onExitReadOnly,
 }) => {
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const isThinkLife = runtimeProfile === "think_life";
+  const isReadOnly = Boolean(readOnlyDialogueId);
+  const inputDisabled = isReadOnly || isFlushing || (!isThinkLife && isThinking);
   const canSend =
     (!!input.trim() || !!selectedImage) &&
-    !isFlushing &&
-    (isThinkLife || !isThinking);
+    !inputDisabled;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -486,6 +491,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         "p-6 border-t z-10 transition-all duration-300",
         theme === 'dark' ? "bg-[#0A0A0A]/80 border-[#1A1A1A]" : "bg-white/80 border-zinc-200"
       )}>
+        {isReadOnly ? (
+          <div className="max-w-4xl mx-auto mb-3 flex items-center justify-between gap-3 text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+            <span className="truncate">Stored dialogue: {readOnlyDialogueId}</span>
+            {onExitReadOnly ? (
+              <button
+                type="button"
+                onClick={onExitReadOnly}
+                className="shrink-0 text-cyan-500 transition-colors hover:text-cyan-300"
+              >
+                Return to live conversation
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {selectedImage ? (
           <div className="max-w-4xl mx-auto mb-3">
             <div
@@ -515,7 +534,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <button
                 type="button"
                 onClick={() => onClearImage?.()}
-                disabled={(isThinkLife ? false : isThinking) || isFlushing || selectedImage.isUploading}
+                disabled={inputDisabled || selectedImage.isUploading}
                 className="text-zinc-500 transition-colors hover:text-rose-500 disabled:opacity-40"
                 title="Remove image"
               >
@@ -536,8 +555,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isFlushing ? "MEMORY FLUSH IN PROGRESS..." : "ENTER COMMAND OR MESSAGE..."}
-            disabled={(isThinkLife ? false : isThinking) || isFlushing}
+            placeholder={
+              isReadOnly
+                ? "STORED DIALOGUE — READ ONLY"
+                : isFlushing
+                  ? "MEMORY FLUSH IN PROGRESS..."
+                  : "ENTER COMMAND OR MESSAGE..."
+            }
+            disabled={inputDisabled}
             className={cn(
               "w-full rounded-sm py-3 pl-4 pr-12 text-sm font-mono transition-all disabled:opacity-50 border focus:outline-none focus:ring-1 focus:ring-cyan-900/20",
               theme === 'dark' 
@@ -548,7 +573,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={(isThinkLife ? false : isThinking) || isFlushing}
+            disabled={inputDisabled}
             className="absolute right-12 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-cyan-400 disabled:opacity-30 transition-colors"
             title="Upload image"
           >
