@@ -25,6 +25,7 @@ import {
   ThreadState,
 } from "./types/chat";
 import { API_BASE, chatApi, clearAuthToken, getAuthToken, updateApiBase } from "./services/api";
+import { resolveCanonicalThreadId } from "./lib/canonicalThread";
 import {
   thinkLifeFromRuntimePayload,
   thinkLifePhaseFromState,
@@ -32,28 +33,7 @@ import {
   type ThinkLifeRuntimePhase,
 } from "./lib/thinkLifeRuntime";
 
-const DEFAULT_THREAD_ID = "demo-thread-1";
-const ACTIVE_THREAD_KEY_PREFIX = "M_AGENT_ACTIVE_THREAD_ID:";
 const BUFFER_VIAL_MAX = 12;
-
-const threadStorageKey = (username: string) => {
-  const safeUser = String(username || "").trim().toLowerCase();
-  return `${ACTIVE_THREAD_KEY_PREFIX}${safeUser}`;
-};
-
-const loadActiveThreadId = (username: string): string => {
-  if (typeof window === "undefined") return "";
-  const raw = localStorage.getItem(threadStorageKey(username)) || "";
-  const safe = String(raw || "").trim();
-  return safe;
-};
-
-const saveActiveThreadId = (username: string, threadId: string) => {
-  if (typeof window === "undefined") return;
-  const safeThread = String(threadId || "").trim();
-  if (!safeThread) return;
-  localStorage.setItem(threadStorageKey(username), safeThread);
-};
 
 const normalizeImageUrl = (url?: string | null): string | undefined => {
   const safe = String(url || "").trim();
@@ -130,7 +110,7 @@ export default function App() {
   const [isFlushing, setIsFlushing] = useState(false);
   const [flushStatus, setFlushStatus] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [threadId, setThreadId] = useState(DEFAULT_THREAD_ID);
+  const [threadId, setThreadId] = useState("");
   const [threadState, setThreadState] = useState<ThreadState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
@@ -244,6 +224,7 @@ export default function App() {
     cleanupStreams();
     clearAuthToken();
     setAuthUser(null);
+    setThreadId("");
     setThreadState(null);
     setDialogues([]);
     setDialoguesError(null);
@@ -568,10 +549,6 @@ export default function App() {
           break;
         case "schedule_created":
           addThinkingLog(type, "日程已创建", payload);
-          setScheduleRefreshToken((prev) => prev + 1);
-          break;
-        case "schedule_updated":
-          addThinkingLog(type, "日程已更新", payload);
           setScheduleRefreshToken((prev) => prev + 1);
           break;
         case "schedule_canceled":
@@ -971,11 +948,6 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (!authUser) return;
-    saveActiveThreadId(authUser.username, threadId);
-  }, [authUser, threadId]);
-
-  useEffect(() => {
     const bootstrap = async () => {
       await checkHealth();
       const token = getAuthToken();
@@ -986,8 +958,11 @@ export default function App() {
       try {
         const me = await chatApi.me();
         if (me.user) {
-          const restoredThreadId = loadActiveThreadId(me.user.username) || DEFAULT_THREAD_ID;
-          setThreadId(restoredThreadId);
+          const canonicalThreadId = resolveCanonicalThreadId(me);
+          if (!canonicalThreadId) {
+            throw new Error("服务器未在 /v1/auth/me 返回规范线程 ID");
+          }
+          setThreadId(canonicalThreadId);
           setAuthUser(me.user);
         } else {
           clearAuthToken();
@@ -1037,9 +1012,16 @@ export default function App() {
         <main className="w-full h-full relative">
           <AuthPanel
             theme={theme}
-            onAuthenticated={(user) => {
-              const restoredThreadId = loadActiveThreadId(user.username) || DEFAULT_THREAD_ID;
-              setThreadId(restoredThreadId);
+            onAuthenticated={async (session) => {
+              const user = session.user;
+              const canonicalThreadId = resolveCanonicalThreadId(session);
+              if (!user || !canonicalThreadId) {
+                const message = "服务器未在认证响应中返回规范线程 ID";
+                setError(message);
+                await forceLogout();
+                throw new Error(message);
+              }
+              setThreadId(canonicalThreadId);
               setAuthUser(user);
               setError(null);
               setMessages([]);
@@ -1058,7 +1040,13 @@ export default function App() {
             onSave={handleUpdateApiUrl}
             theme={theme}
             authUser={authUser}
-            onUserUpdated={(user) => setAuthUser(user)}
+            onUserUpdated={(user) => {
+              setAuthUser(user);
+              const canonicalThreadId = resolveCanonicalThreadId({ user });
+              if (canonicalThreadId) {
+                setThreadId(canonicalThreadId);
+              }
+            }}
           />
         </main>
       ) : (

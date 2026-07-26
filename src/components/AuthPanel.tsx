@@ -2,11 +2,11 @@ import React, { useState } from "react";
 import { motion } from "motion/react";
 import { LogIn, UserPlus, Shield, Loader2 } from "lucide-react";
 import { chatApi } from "../services/api";
-import { AuthUser } from "../types/chat";
+import { AuthMeResponse } from "../types/chat";
 import { cn } from "../lib/utils";
 
 interface AuthPanelProps {
-  onAuthenticated: (user: AuthUser) => void;
+  onAuthenticated: (session: AuthMeResponse) => void | Promise<void>;
   theme: "dark" | "light";
 }
 
@@ -30,8 +30,10 @@ export const AuthPanel: React.FC<AuthPanelProps> = ({ onAuthenticated, theme }) 
       if (mode === "register") {
         await chatApi.register(username.trim(), password, role);
       }
-      const login = await chatApi.login(username.trim(), password);
-      onAuthenticated(login.user);
+      await chatApi.login(username.trim(), password);
+      const session = await chatApi.me();
+      if (!session.user) throw new Error("认证成功，但服务器未返回用户会话");
+      await onAuthenticated(session);
     } catch (err: any) {
       setError(err?.message || "认证失败");
     } finally {

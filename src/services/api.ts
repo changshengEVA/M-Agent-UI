@@ -1,6 +1,8 @@
 import {
   AuthLoginResponse,
+  AuthMeResponse,
   AuthUser,
+  ChatHealthResponse,
   ChatRun,
   DialogueDetail,
   DialogueListResponse,
@@ -96,12 +98,12 @@ async function parseJsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export const chatApi = {
-  async healthCheck() {
+  async healthCheck(): Promise<ChatHealthResponse> {
     const res = await fetch(`${API_BASE}/healthz`, {
       headers: buildHeaders(),
       mode: "cors",
     });
-    return parseJsonOrThrow<any>(res);
+    return parseJsonOrThrow<ChatHealthResponse>(res);
   },
 
   async register(username: string, password: string, role: "basic" | "advanced" = "basic") {
@@ -126,12 +128,12 @@ export const chatApi = {
     return payload;
   },
 
-  async me(): Promise<{ user: AuthUser | null }> {
+  async me(): Promise<AuthMeResponse> {
     const res = await fetch(`${API_BASE}/v1/auth/me`, {
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
     });
-    return parseJsonOrThrow<{ user: AuthUser | null }>(res);
+    return parseJsonOrThrow<AuthMeResponse>(res);
   },
 
   async logout() {
@@ -349,7 +351,8 @@ export const chatApi = {
   },
 
   async getThreadState(threadId: string): Promise<ThreadState> {
-    const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/state`, {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/memory/state`, {
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
     });
@@ -357,7 +360,8 @@ export const chatApi = {
   },
 
   async setMemoryMode(threadId: string, mode: "manual" | "off", discardPending = false) {
-    const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/mode`, {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/memory/mode`, {
       method: "POST",
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
@@ -367,7 +371,8 @@ export const chatApi = {
   },
 
   async flushBuffer(threadId: string, reason = "manual_api") {
-    const res = await fetch(`${API_BASE}/v1/chat/threads/${threadId}/memory/flush`, {
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/memory/flush`, {
       method: "POST",
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
@@ -421,42 +426,14 @@ export const chatApi = {
   async createSchedule(
     threadId: string,
     payload: {
-      title: string;
+      text: string;
       due_at: string;
       timezone_name?: string;
-      prompt?: string;
-      original_time_text?: string;
-      source_text?: string;
-      metadata?: Record<string, any>;
     },
   ): Promise<{ success: boolean; thread_id: string; item: ScheduleItem }> {
     const safeThreadId = encodeURIComponent(String(threadId || "").trim());
     const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules`, {
       method: "POST",
-      headers: buildHeaders({ withAuth: true }),
-      mode: "cors",
-      body: JSON.stringify(payload),
-    });
-    return parseJsonOrThrow<{ success: boolean; thread_id: string; item: ScheduleItem }>(res);
-  },
-
-  async updateSchedule(
-    threadId: string,
-    scheduleId: string,
-    payload: {
-      title?: string;
-      due_at?: string;
-      timezone_name?: string;
-      prompt?: string;
-      original_time_text?: string;
-      source_text?: string;
-      metadata?: Record<string, any>;
-    },
-  ): Promise<{ success: boolean; thread_id: string; item: ScheduleItem }> {
-    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
-    const safeScheduleId = encodeURIComponent(String(scheduleId || "").trim());
-    const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/schedules/${safeScheduleId}`, {
-      method: "PATCH",
       headers: buildHeaders({ withAuth: true }),
       mode: "cors",
       body: JSON.stringify(payload),
@@ -483,7 +460,8 @@ export const chatApi = {
   },
 
   getThreadEventsUrl(threadId: string) {
-    return `${API_BASE}/v1/chat/threads/${threadId}/events?after_seq=-1`;
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    return `${API_BASE}/v1/chat/threads/${safeThreadId}/events?after_seq=-1`;
   },
 
   getImageFetchHeaders() {

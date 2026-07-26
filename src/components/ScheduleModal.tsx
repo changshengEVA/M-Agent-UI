@@ -497,7 +497,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [draftTitle, setDraftTitle] = useState("");
+  const [draftText, setDraftText] = useState("");
   const [draftDueAt, setDraftDueAt] = useState(buildDefaultDueAt());
   const [draftTimezone, setDraftTimezone] = useState(browserTimezone());
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -594,8 +594,8 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
 
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!draftTitle.trim()) {
-      setError("请先写一个日程标题");
+    if (!draftText.trim()) {
+      setError("请填写届时发送给智能体的系统式刺激文本");
       return;
     }
     if (!draftDueAt.trim()) {
@@ -607,14 +607,11 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
     setMessage(null);
     try {
       await chatApi.createSchedule(threadId, {
-        title: draftTitle.trim(),
-        prompt: draftTitle.trim(),
+        text: draftText.trim(),
         due_at: draftDueAt,
         timezone_name: draftTimezone.trim() || "Asia/Shanghai",
-        original_time_text: draftDueAt.replace("T", " "),
-        source_text: draftTitle.trim(),
       });
-      setDraftTitle("");
+      setDraftText("");
       setDraftDueAt(buildDefaultDueAt());
       setMessage("日程已创建");
       await loadSchedules();
@@ -628,7 +625,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   };
 
   const handleCancel = async (item: ScheduleItem) => {
-    const confirmed = window.confirm(`取消日程“${item.title}”吗？`);
+    const confirmed = window.confirm(`取消日程“${item.text}”吗？`);
     if (!confirmed) return;
     setCancellingId(item.schedule_id);
     setError(null);
@@ -738,12 +735,12 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
 
                   <form onSubmit={handleCreate} className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] uppercase tracking-widest text-zinc-500">Title</label>
+                      <label className="text-[10px] uppercase tracking-widest text-zinc-500">Stimulus Text</label>
                       <input
                         type="text"
-                        value={draftTitle}
-                        onChange={(e) => setDraftTitle(e.target.value)}
-                        placeholder="例如：开组会 / 交周报"
+                        value={draftText}
+                        onChange={(e) => setDraftText(e.target.value)}
+                        placeholder="例如：预定的周报提交时间已到，请检查并提交本周周报。"
                         className={cn(
                           "w-full px-3 py-2 rounded-sm text-sm border focus:outline-none focus:ring-1 focus:ring-cyan-500/30",
                           theme === "dark" ? "bg-[#020407] border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-900",
@@ -806,7 +803,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                     type="text"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    placeholder="搜标题、描述或 schedule id"
+                    placeholder="搜索刺激文本或 schedule id"
                     className={cn(
                       "w-full px-3 py-2 rounded-sm text-sm border focus:outline-none focus:ring-1 focus:ring-cyan-500/30",
                       theme === "dark" ? "bg-[#020407] border-zinc-800 text-zinc-100" : "bg-white border-zinc-200 text-zinc-900",
@@ -927,7 +924,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h4 className={cn("text-sm font-semibold", theme === "dark" ? "text-zinc-100" : "text-zinc-900")}>
-                                  {item.title}
+                                  {item.text}
                                 </h4>
                                 <span className={cn("px-2 py-0.5 rounded-sm border text-[10px] uppercase tracking-widest", statusTone(item.status, theme))}>
                                   {statusLabel[item.status] || item.status}
@@ -936,23 +933,12 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
 
                               <div className="mt-3 flex items-center gap-2 text-[11px] text-zinc-500">
                                 <Clock3 className="w-3.5 h-3.5" />
-                                <span>{item.schedule_kind === "before_event" ? `提醒 ${item.due_display}` : item.due_display}</span>
+                                <span>{item.due_display}</span>
                                 <span className="opacity-30">•</span>
                                 <span className="font-mono">{item.timezone_name}</span>
                               </div>
-                              {item.event_display && (
-                                <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-500">
-                                  <CalendarClock className="w-3.5 h-3.5" />
-                                  <span>事件 {item.event_display}</span>
-                                  {item.reminder_offset_label && (
-                                    <span className="opacity-70">提前{item.reminder_offset_label}</span>
-                                  )}
-                                </div>
-                              )}
-
                               <div className="mt-2 grid gap-1 text-[11px] text-zinc-500">
                                 <p>Thread: {item.thread_id || "-"}</p>
-                                <p>Original: {item.original_time_text || "-"}</p>
                                 <p className="font-mono">ID: {item.schedule_id}</p>
                               </div>
                             </div>

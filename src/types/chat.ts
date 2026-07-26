@@ -164,6 +164,7 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   editable_fields?: Record<string, string[]>;
+  canonical_thread_id?: string | null;
 }
 
 export interface AuthLoginResponse {
@@ -171,6 +172,21 @@ export interface AuthLoginResponse {
   access_token: string;
   token_type: "bearer";
   expires_at: string;
+}
+
+export interface AuthMeResponse {
+  user: AuthUser | null;
+  canonical_thread_id?: string | null;
+}
+
+export interface ChatHealthResponse {
+  ok: boolean;
+  runtime?: {
+    default_thread_id?: string | null;
+    runtime_profile?: string | null;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
 }
 
 export type UserConfigSectionKey = "chat" | "memory_agent" | "memory_core";
@@ -310,27 +326,14 @@ export type ScheduleStatus = "pending" | "leased" | "running" | "done" | "failed
 
 export interface ScheduleItem {
   schedule_id: string;
-  owner_id: string;
   thread_id: string;
-  title: string;
-  status: ScheduleStatus;
   due_at_utc: string;
+  timezone_name: string;
+  text: string;
+  status: ScheduleStatus;
+  created_at: string;
   due_at_local: string;
   due_display: string;
-  schedule_kind?: "time_due" | "before_event" | string;
-  event_at_utc?: string | null;
-  event_at_local?: string | null;
-  event_display?: string | null;
-  reminder_offset_minutes?: number | null;
-  reminder_offset_label?: string | null;
-  timezone_name: string;
-  original_time_text: string;
-  action_type: string;
-  action_payload: Record<string, any>;
-  created_at: string;
-  updated_at: string;
-  source_text: string;
-  metadata: Record<string, any>;
 }
 
 export interface ScheduleListResponse {
