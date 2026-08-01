@@ -1,10 +1,17 @@
 import React from "react";
 import { motion } from "motion/react";
-import { Database, History, Plus, Archive, Upload } from "lucide-react";
+import { Database, History, Plus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { BufferVial } from "./BufferVial";
+import { TransactionCenter } from "./TransactionCenter";
 import { cn } from "../lib/utils";
-import { DialogueSummary, HistoryRound, ThreadState } from "../types/chat";
+import type {
+  SceneEntry,
+  ThinkLifeTransaction,
+  ThinkLifeTransactionDeleteResponse,
+  ThreadState,
+} from "../types/chat";
+import { isProductRuntimeProfile } from "../lib/thinkLifeRuntime";
 
 interface ThreadSidebarProps {
   threadState: ThreadState | null;
@@ -12,13 +19,20 @@ interface ThreadSidebarProps {
   bufferVialCount?: number;
   bufferVialMax?: number;
   onNewConversation: () => void;
-  onSelectRound: (round: HistoryRound) => void;
-  dialogues: DialogueSummary[];
-  dialoguesLoading: boolean;
-  dialoguesError: string | null;
-  selectedDialogueId: string | null;
-  onSelectDialogue: (dialogue: DialogueSummary) => void;
-  onOpenDialogueUpload?: () => void;
+  onOpenHistory: () => void;
+  historyCount?: number;
+  transactions: ThinkLifeTransaction[];
+  activeTransactionId?: string | null;
+  cpuTransactionId?: string | null;
+  sceneEntries?: SceneEntry[];
+  transactionsLoading?: boolean;
+  transactionsError?: string | null;
+  transactionsUpdatedAt?: string | null;
+  onRefreshTransactions?: () => void | Promise<void>;
+  onDeleteTransaction?: (
+    transaction: ThinkLifeTransaction,
+  ) => Promise<ThinkLifeTransactionDeleteResponse | void>;
+  transactionResetToken?: string | number;
   isFlushing: boolean;
   flushStatus: string | null;
   theme: "dark" | "light";
@@ -30,43 +44,51 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
   bufferVialCount,
   bufferVialMax = 12,
   onNewConversation,
-  onSelectRound,
-  dialogues,
-  dialoguesLoading,
-  dialoguesError,
-  selectedDialogueId,
-  onSelectDialogue,
-  onOpenDialogueUpload,
+  onOpenHistory,
+  historyCount = 0,
+  transactions,
+  activeTransactionId,
+  cpuTransactionId,
+  sceneEntries = [],
+  transactionsLoading = false,
+  transactionsError = null,
+  transactionsUpdatedAt = null,
+  onRefreshTransactions,
+  onDeleteTransaction,
+  transactionResetToken,
   isFlushing,
   flushStatus,
   theme,
 }) => {
-  const isThinkLife = runtimeProfile === "think_life";
+  const isThinkLife = isProductRuntimeProfile(runtimeProfile);
   const vialCount = bufferVialCount ?? threadState?.pending_rounds ?? 0;
   const blockNewConversation =
     isFlushing || threadState === null || Boolean(threadState.has_pending_data);
 
   return (
-    <div
+    <aside
       className={cn(
-        "flex flex-col h-full border-r font-mono text-[11px] backdrop-blur-none transition-colors duration-300 w-72",
-        theme === "dark" ? "bg-[#0A0A0A]/95 border-[#1A1A1A]" : "bg-white border-zinc-200",
+        "flex h-full w-[21rem] shrink-0 flex-col border-r font-mono text-[11px] backdrop-blur-none transition-colors duration-300 max-[1180px]:w-72",
+        theme === "dark"
+          ? "border-[#1A1A1A] bg-[#0A0A0A]/95"
+          : "border-zinc-200 bg-white",
       )}
     >
       <div
         className={cn(
-          "p-4 border-b transition-colors",
+          "grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-2 border-b p-3",
           theme === "dark" ? "border-[#1A1A1A]" : "border-zinc-200",
         )}
       >
         <button
+          type="button"
           onClick={onNewConversation}
           disabled={blockNewConversation}
           className={cn(
-            "w-full flex items-center justify-center gap-2 py-2 rounded-sm font-bold uppercase tracking-widest transition-all group",
+            "group flex min-w-0 items-center justify-center gap-2 rounded-sm border px-3 py-2 font-bold uppercase tracking-widest transition-all",
             blockNewConversation
-              ? "bg-zinc-500/10 border-zinc-500/20 text-zinc-500 cursor-not-allowed opacity-50"
-              : "bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20",
+              ? "cursor-not-allowed border-zinc-500/20 bg-zinc-500/10 text-zinc-500 opacity-50"
+              : "border-cyan-500/30 bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20",
           )}
           title={
             blockNewConversation
@@ -76,192 +98,134 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
         >
           <Plus
             className={cn(
-              "w-4 h-4 transition-transform",
+              "h-4 w-4 shrink-0 transition-transform",
               !blockNewConversation && "group-hover:rotate-90",
             )}
           />
-          New Conversation
+          <span className="truncate">New Conversation</span>
         </button>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-none">
-        <div className="pt-1">
-          <BufferVial
-            pendingCount={vialCount}
-            maxCount={bufferVialMax}
-            isFlushing={isFlushing}
-            flushStatus={flushStatus}
-            theme={theme}
-            headerLabel={isThinkLife ? "Segment" : "Buffer"}
-            unitLabel={isThinkLife ? "Turns" : "Units"}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-zinc-500 uppercase font-bold tracking-tighter text-[9px]">
-            <Database className="w-3 h-3" />
-            Session Metrics
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div
-              className={cn(
-                "p-2 border rounded-sm text-center transition-colors",
-                theme === "dark" ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200",
-              )}
-            >
-              <div className="text-zinc-600 uppercase text-[8px]">Rounds</div>
-              <div className={cn("font-bold transition-colors", theme === "dark" ? "text-zinc-200" : "text-zinc-900")}>
-                {threadState?.history_rounds || 0}
-              </div>
-            </div>
-            <div
-              className={cn(
-                "p-2 border rounded-sm text-center transition-colors",
-                theme === "dark" ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200",
-              )}
-            >
-              <div className="text-zinc-600 uppercase text-[8px]">{isThinkLife ? "Segment" : "Pending"}</div>
-              <div className={cn("font-bold transition-colors", theme === "dark" ? "text-zinc-200" : "text-zinc-900")}>
-                {isThinkLife ? vialCount : threadState?.pending_rounds || 0}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-zinc-500 uppercase font-bold tracking-tighter text-[9px]">
-            <History className="w-3 h-3" />
-            Recent Thread Rounds
-          </div>
-          <div className="space-y-2">
-            {threadState?.history_preview?.length === 0 ? (
-              <div className="text-zinc-700 italic text-center py-3">No live thread history</div>
-            ) : (
-              threadState?.history_preview?.map((round) => (
-                <motion.button
-                  key={round.round_id}
-                  whileHover={{ x: 4 }}
-                  onClick={() => onSelectRound(round)}
-                  className={cn(
-                    "w-full text-left p-2 rounded-sm border transition-all group",
-                    theme === "dark"
-                      ? "bg-zinc-900/30 border-zinc-800/50 hover:border-cyan-900/50 hover:bg-cyan-950/10"
-                      : "bg-zinc-50 border-zinc-200 hover:border-cyan-500/50 hover:bg-cyan-50",
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span
-                      className={cn(
-                        "text-[8px] px-1 rounded-sm uppercase font-bold",
-                        round.capture_state === "pending"
-                          ? "bg-amber-500/20 text-amber-500"
-                          : "bg-emerald-500/20 text-emerald-500",
-                      )}
-                    >
-                      {round.capture_state}
-                    </span>
-                    <span className="text-[8px] text-zinc-600">
-                      {new Date(round.user_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-                  <p
-                    className={cn(
-                      "line-clamp-1 transition-colors",
-                      theme === "dark" ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-600 group-hover:text-zinc-900",
-                    )}
-                  >
-                    {round.user_message}
-                  </p>
-                </motion.button>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-zinc-500 uppercase font-bold tracking-tighter text-[9px]">
-              <Archive className="w-3 h-3" />
-              Stored Dialogues
-            </div>
-            {onOpenDialogueUpload && (
-              <button
-                type="button"
-                onClick={onOpenDialogueUpload}
-                disabled={isFlushing}
-                title="批量上传 Dialogue JSON 并建立记忆索引"
-                className={cn(
-                  "p-1 rounded-sm border transition-colors disabled:opacity-40",
-                  theme === "dark"
-                    ? "border-zinc-700 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-800"
-                    : "border-zinc-300 text-cyan-600 hover:bg-cyan-50",
-                )}
-              >
-                <Upload className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          {dialoguesLoading ? (
-            <div className="text-zinc-500 text-[10px]">Loading dialogue history...</div>
-          ) : dialoguesError ? (
-            <div className="text-rose-500 text-[10px]">{dialoguesError}</div>
-          ) : dialogues.length <= 0 ? (
-            <div className="text-zinc-700 italic text-center py-3">No stored dialogues yet</div>
-          ) : (
-            <div className="space-y-2">
-              {dialogues.slice(0, 20).map((item) => (
-                <button
-                  key={item.dialogue_id}
-                  onClick={() => onSelectDialogue(item)}
-                  className={cn(
-                    "w-full text-left p-2 rounded-sm border transition-all",
-                    selectedDialogueId === item.dialogue_id
-                      ? "border-cyan-500/60 bg-cyan-500/10"
-                      : theme === "dark"
-                        ? "border-zinc-800/60 bg-zinc-900/20 hover:border-cyan-900/60"
-                        : "border-zinc-200 bg-zinc-50 hover:border-cyan-300",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] uppercase tracking-widest text-cyan-500">{item.thread_id || "unknown-thread"}</span>
-                    <span className="text-[9px] text-zinc-500">{item.start_time ? new Date(item.start_time).toLocaleDateString() : "-"}</span>
-                  </div>
-                  <p className={cn("line-clamp-1 mt-1", theme === "dark" ? "text-zinc-300" : "text-zinc-700")}>
-                    {item.preview || item.dialogue_id}
-                  </p>
-                  <div className="text-[9px] text-zinc-500 mt-1">
-                    rounds={item.round_count} turns={item.turn_count}
-                  </div>
-                </button>
-              ))}
-            </div>
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          className={cn(
+            "relative flex h-full min-w-12 items-center justify-center gap-1.5 rounded-sm border px-2 text-zinc-500 transition-colors",
+            theme === "dark"
+              ? "border-zinc-800 hover:border-cyan-900 hover:bg-cyan-950/20 hover:text-cyan-400"
+              : "border-zinc-200 hover:border-cyan-300 hover:bg-cyan-50 hover:text-cyan-600",
           )}
-        </div>
-
+          title="Open thread and stored dialogue history"
+          aria-label={`Open history, ${historyCount} records`}
+        >
+          <History className="h-4 w-4" />
+          {historyCount > 0 ? (
+            <span className="min-w-4 rounded-full bg-cyan-500/15 px-1 text-center text-[8px] font-bold text-cyan-500">
+              {historyCount > 99 ? "99+" : historyCount}
+            </span>
+          ) : null}
+        </button>
       </div>
 
       <div
         className={cn(
-          "p-4 border-t transition-colors",
-          theme === "dark" ? "border-[#1A1A1A] bg-[#050505]" : "border-zinc-200 bg-zinc-50",
+          "shrink-0 space-y-3 border-b p-3",
+          theme === "dark" ? "border-[#1A1A1A]" : "border-zinc-200",
         )}
       >
-        <div className="flex items-center justify-between text-[9px] text-zinc-600 uppercase">
+        <BufferVial
+          pendingCount={vialCount}
+          maxCount={bufferVialMax}
+          isFlushing={isFlushing}
+          flushStatus={flushStatus}
+          theme={theme}
+          headerLabel={isThinkLife ? "Segment" : "Buffer"}
+          unitLabel={isThinkLife ? "Turns" : "Units"}
+        />
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-tighter text-zinc-500">
+            <Database className="h-3 w-3" />
+            Session Metrics
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              ["Rounds", threadState?.history_rounds || 0],
+              [isThinkLife ? "Segment" : "Pending", isThinkLife ? vialCount : threadState?.pending_rounds || 0],
+              ["Queue", threadState?.think_life?.pending_stimuli || 0],
+            ].map(([label, value]) => (
+              <div
+                key={String(label)}
+                className={cn(
+                  "rounded-sm border p-2 text-center transition-colors",
+                  theme === "dark"
+                    ? "border-zinc-800 bg-zinc-900/50"
+                    : "border-zinc-200 bg-zinc-50",
+                )}
+              >
+                <div className="truncate text-[7px] uppercase text-zinc-600">{label}</div>
+                <div
+                  className={cn(
+                    "font-bold",
+                    theme === "dark" ? "text-zinc-200" : "text-zinc-900",
+                  )}
+                >
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        <TransactionCenter
+          transactions={transactions}
+          activeTransactionId={activeTransactionId}
+          cpuTransactionId={cpuTransactionId}
+          sceneEntries={sceneEntries}
+          runtimeProfile={runtimeProfile}
+          theme={theme}
+          loading={transactionsLoading}
+          error={transactionsError}
+          lastUpdated={transactionsUpdatedAt}
+          onRefresh={onRefreshTransactions}
+          onDeleteTransaction={onDeleteTransaction}
+          resetToken={transactionResetToken}
+          legacyWorkingMemory={threadState?.working_memory ?? null}
+        />
+      </div>
+
+      <div
+        className={cn(
+          "shrink-0 border-t p-3",
+          theme === "dark"
+            ? "border-[#1A1A1A] bg-[#050505]"
+            : "border-zinc-200 bg-zinc-50",
+        )}
+      >
+        <div className="flex items-center justify-between text-[8px] uppercase text-zinc-600">
           <span>Last Activity</span>
           <span>
-            {threadState?.last_activity_at ? `${formatDistanceToNow(new Date(threadState.last_activity_at))} ago` : "Never"}
+            {threadState?.last_activity_at
+              ? `${formatDistanceToNow(new Date(threadState.last_activity_at))} ago`
+              : "Never"}
           </span>
         </div>
-        <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+        <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-zinc-900">
           <motion.div
             initial={{ width: 0 }}
             animate={{
-              width: `${((threadState?.history_rounds || 0) / (threadState?.idle_flush_seconds || 600)) * 100}%`,
+              width: `${Math.min(
+                100,
+                ((threadState?.history_rounds || 0) /
+                  (threadState?.idle_flush_seconds || 600)) *
+                  100,
+              )}%`,
             }}
             className="h-full bg-cyan-500/50"
           />
         </div>
       </div>
-    </div>
+    </aside>
   );
 };

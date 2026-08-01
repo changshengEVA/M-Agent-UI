@@ -70,7 +70,7 @@
 
 ### 2.3 线程侧栏（ThreadSidebar）
 
-用途：显示线程历史、pending 轮次、memory 模式。
+用途：显示线程摘要与常驻 Transaction Center；历史记录由独立 `HistoryWindow` 查看。
 
 接口：
 
@@ -81,6 +81,8 @@
 5. `GET /v1/chat/dialogues`
 6. `GET /v1/chat/dialogues/{dialogue_id}`
 7. `POST /v1/chat/dialogues/upload`（multipart + SSE 索引进度）
+8. `GET /v1/chat/threads/{thread_id}/transactions`
+9. `GET /v1/chat/threads/{thread_id}/scene?since_flush=false`
 
 前端对应：
 
@@ -90,7 +92,9 @@
 - `chatApi.flushBuffer`
 - `chatApi.listDialogues`
 - `chatApi.getDialogue`
-- `chatApi.uploadDialogues` + `DialogueUploadModal`（Stored Dialogues 标题旁上传按钮）
+- `chatApi.uploadDialogues` + `DialogueUploadModal`（History Window 的 Stored Dialogues 页签）
+- `chatApi.getTransactions`
+- `chatApi.getScene`
 
 建议流程：
 
@@ -99,12 +103,17 @@
 3. 点切换模式 -> 调 mode 接口
 4. 点 flush -> 调 flush 接口
 
-**工作记忆（WM）**：`GET .../memory/state` 与 SSE `thread_state_updated` 中的 `thread_state.working_memory` 含：
+**工作记忆（WM）**：产品运行时的 WM 按 transaction 隔离，在常驻
+`TransactionCenter` 的事务详情中展示 Task、WM 与关联 Scene。Legacy runtime 继续读取
+`GET .../memory/state` / `thread_state_updated` 中的 `thread_state.working_memory`：
 
 - `enabled`, `stored_entries`, `inject_max_entries`, `max_stored_entries`, `ui_expose_max_entries`
 - `entries`：服务端存储的 WM 条目 **尾部**（最多 `ui_expose_max_entries` 条，与注入模型的 tail 无关），用于前端调试展示。
 
-前端组件：`tools/M-Agent-UI/src/components/WorkingMemoryFloatingPanel.tsx`（顶栏 Layers 按钮打开可拖拽面板）。
+前端组件：`tools/M-Agent-UI/src/components/TransactionCenter.tsx`。原顶栏 WM 按钮与浮动
+WM 面板不再装配；`HistoryWindow.tsx` 负责实时轮次和已存 Dialogue 的独立预览。
+
+### 2.4 设置页（SettingsModal）
 
 用途：修改 API 地址、打开文档、修改用户个性化配置。
 

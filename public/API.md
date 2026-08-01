@@ -70,7 +70,7 @@
 
 ### 2.3 线程侧栏（ThreadSidebar）
 
-用途：显示线程历史、pending 轮次、memory 模式。
+用途：显示线程摘要与常驻 Transaction Center；历史记录由独立 `HistoryWindow` 查看。
 
 接口：
 
@@ -80,6 +80,9 @@
 4. `POST /v1/chat/threads/{thread_id}/memory/flush`
 5. `GET /v1/chat/dialogues`
 6. `GET /v1/chat/dialogues/{dialogue_id}`
+7. `POST /v1/chat/dialogues/upload`（multipart + SSE 索引进度）
+8. `GET /v1/chat/threads/{thread_id}/transactions`
+9. `GET /v1/chat/threads/{thread_id}/scene?since_flush=false`
 
 前端对应：
 
@@ -89,6 +92,9 @@
 - `chatApi.flushBuffer`
 - `chatApi.listDialogues`
 - `chatApi.getDialogue`
+- `chatApi.uploadDialogues` + `DialogueUploadModal`
+- `chatApi.getTransactions`
+- `chatApi.getScene`
 
 建议流程：
 
@@ -96,6 +102,10 @@
 2. 同时订阅 thread SSE 做增量更新
 3. 点切换模式 -> 调 mode 接口
 4. 点 flush -> 调 flush 接口
+
+产品运行时的 WM 按 transaction 隔离，在常驻 `TransactionCenter` 的事务详情中展示
+Task、WM 与关联 Scene。Legacy runtime 的 thread WM 也在同一区域兼容展示。原顶栏 WM
+按钮与浮动 WM 面板不再装配；实时轮次和已存 Dialogue 由 `HistoryWindow` 独立预览。
 
 ### 2.4 设置页（SettingsModal）
 

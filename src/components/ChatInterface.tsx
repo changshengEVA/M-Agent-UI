@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, Layers, ScrollText, ImagePlus, X, Square } from "lucide-react";
+import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, ScrollText, ImagePlus, X, Square } from "lucide-react";
 import { Message, ThreadState, ThinkLifeRuntimePhase } from "../types/chat";
 import { cn } from "../lib/utils";
-import { thinkLifePhaseLabel } from "../lib/thinkLifeRuntime";
+import { thinkLifePhaseLabel, isProductRuntimeProfile } from "../lib/thinkLifeRuntime";
 import ReactMarkdown from "react-markdown";
 import { chatApi } from "../services/api";
 
@@ -83,7 +83,6 @@ interface ChatInterfaceProps {
   onRetry: () => void;
   onOpenSettings: () => void;
   onOpenSchedules: () => void;
-  onOpenWorkingMemory?: () => void;
   onOpenScene?: () => void;
   sceneEntryCount?: number;
   onLogout: () => void;
@@ -118,7 +117,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onRetry,
   onOpenSettings,
   onOpenSchedules,
-  onOpenWorkingMemory,
   onOpenScene,
   sceneEntryCount = 0,
   onLogout,
@@ -134,7 +132,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const isThinkLife = runtimeProfile === "think_life";
+  const isThinkLife = isProductRuntimeProfile(runtimeProfile);
   const isReadOnly = Boolean(readOnlyDialogueId);
   const inputDisabled = isReadOnly || isFlushing || (!isThinkLife && isThinking);
   const canSend =
@@ -192,7 +190,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 )}
               >
                 {threadState?.mode === "manual" ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
-                Memory: {threadState?.mode?.toUpperCase() || "OFF"}
+                Capture: {threadState?.mode?.toUpperCase() || "OFF"}
               </button>
               {isThinkLife && (
                 <span
@@ -286,26 +284,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {sceneEntryCount > 0 ? (
                 <span className="opacity-70">({sceneEntryCount})</span>
               ) : null}
-            </button>
-          )}
-          {onOpenWorkingMemory && (
-            <button
-              type="button"
-              onClick={onOpenWorkingMemory}
-              className={cn(
-                "flex items-center gap-1 px-2 py-1 rounded-sm border text-[10px] font-mono uppercase tracking-wider transition-colors",
-                isThinkLife
-                  ? theme === "dark"
-                    ? "border-violet-800/60 text-violet-400 hover:bg-violet-950/30"
-                    : "border-violet-200 text-violet-700 hover:bg-violet-50"
-                  : theme === "dark"
-                    ? "border-zinc-800 text-zinc-400 hover:text-violet-400"
-                    : "border-zinc-200 text-zinc-500 hover:text-violet-600",
-              )}
-              title={isThinkLife ? "工作记忆 (按事务)" : "工作记忆 (WM)"}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              {isThinkLife ? "WM·事务" : "WM"}
             </button>
           )}
           <button

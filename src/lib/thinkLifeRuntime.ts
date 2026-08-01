@@ -4,6 +4,29 @@ export type ThinkLifeRuntimePhase = "ready" | "processing" | "busy";
 
 const VALID_PHASES: ThinkLifeRuntimePhase[] = ["ready", "processing", "busy"];
 
+/** Profiles that expose Scene / per-transaction WM panels in the UI. */
+const PRODUCT_RUNTIME_PROFILES = new Set([
+  "think_life",
+  "think_life_v1",
+  "langgraph_v1",
+]);
+
+/**
+ * True when the backend runtime exposes Scene + transaction WM surfaces.
+ * Accepts legacy ``think_life`` and R3 engine ids ``think_life_v1`` /
+ * ``langgraph_v1``.
+ */
+export function isProductRuntimeProfile(profile: unknown): boolean {
+  const normalized = String(profile || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+  if (PRODUCT_RUNTIME_PROFILES.has(normalized)) return true;
+  return (
+    normalized.startsWith("think_life") || normalized.startsWith("langgraph")
+  );
+}
+
 export function normalizeRuntimePhase(value: unknown): ThinkLifeRuntimePhase {
   const phase = String(value || "")
     .trim()
@@ -33,7 +56,9 @@ export function thinkLifeFromRuntimePayload(
     pending_stimuli: pending,
     busy,
     busy_reason: String((rt as ThreadRuntimeStatus).busy_reason || phase),
-    runtime_profile: String((rt as ThreadRuntimeStatus).runtime_profile || "think_life"),
+    runtime_profile: String(
+      (rt as ThreadRuntimeStatus).runtime_profile || "think_life_v1",
+    ),
     runtime_phase: phase,
     effective_depth:
       typeof (rt as ThreadRuntimeStatus).effective_depth === "number"

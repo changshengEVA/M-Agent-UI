@@ -15,6 +15,7 @@ import {
   StopThinkingResponse,
   StimulusSubmitResponse,
   ThinkLifeTransactionsResponse,
+  ThinkLifeTransactionDeleteResponse,
   ThreadState,
   UploadImageResponse,
   UserConfigSchemaResponse,
@@ -28,7 +29,7 @@ const getApiBase = () => {
     const saved = localStorage.getItem(API_URL_STORAGE_KEY);
     if (saved) return saved;
   }
-  return (import.meta as any).env.VITE_AGENT_API_URL || "http://127.0.0.1:8777";
+  return (import.meta as any).env?.VITE_AGENT_API_URL || "http://127.0.0.1:8777";
 };
 
 const getStoredAuthToken = () => {
@@ -83,7 +84,13 @@ const parseResponseError = async (res: Response) => {
   let detail = res.statusText;
   try {
     const payload = await res.json();
-    detail = String(payload?.error || payload?.message || detail);
+    const responseDetail = payload?.error || payload?.message || payload?.detail;
+    detail =
+      typeof responseDetail === "string"
+        ? responseDetail
+        : responseDetail
+          ? JSON.stringify(responseDetail)
+          : detail;
   } catch {
     // ignore
   }
@@ -206,15 +213,50 @@ export const chatApi = {
     return parseJsonOrThrow<StimulusSubmitResponse>(res);
   },
 
-  async getTransactions(threadId: string): Promise<ThinkLifeTransactionsResponse> {
+  async getTransactions(
+    threadId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<ThinkLifeTransactionsResponse> {
     const res = await fetch(
       `${API_BASE}/v1/chat/threads/${encodeURIComponent(threadId)}/transactions`,
       {
         headers: buildHeaders({ withAuth: true }),
         mode: "cors",
+        signal: options?.signal,
       },
     );
     return parseJsonOrThrow<ThinkLifeTransactionsResponse>(res);
+  },
+
+  async deleteTransaction(
+    threadId: string,
+    transactionId: string,
+    expectedRevision: number,
+    options?: { idempotencyKey?: string; signal?: AbortSignal },
+  ): Promise<ThinkLifeTransactionDeleteResponse> {
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new Error("A valid transaction revision is required for deletion");
+    }
+    const safeThreadId = encodeURIComponent(String(threadId || "").trim());
+    const safeTransactionId = encodeURIComponent(String(transactionId || "").trim());
+    const idempotencyKey =
+      String(options?.idempotencyKey || "").trim() ||
+      (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `transaction-delete-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const headers = buildHeaders({ withAuth: true });
+    headers["If-Match"] = `W/"${expectedRevision}"`;
+    headers["Idempotency-Key"] = idempotencyKey;
+    const res = await fetch(
+      `${API_BASE}/v1/chat/threads/${safeThreadId}/transactions/${safeTransactionId}`,
+      {
+        method: "DELETE",
+        headers,
+        mode: "cors",
+        signal: options?.signal,
+      },
+    );
+    return parseJsonOrThrow<ThinkLifeTransactionDeleteResponse>(res);
   },
 
   async getScene(

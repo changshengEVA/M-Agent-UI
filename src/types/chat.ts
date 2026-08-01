@@ -106,21 +106,51 @@ export interface StopThinkingResponse {
   thread_runtime?: ThreadRuntimeStatus;
 }
 
+export type ThinkLifeTransactionState = "continue" | "pause" | "complete" | "archive";
+
+export type ThinkLifeTransactionLifecycle = "active" | "deleted";
+
+export type ThinkLifePauseReason =
+  | "awaiting_user"
+  | "scheduled_wait"
+  | "manual_hold"
+  | "runtime_error";
+
+export type ThinkLifeTaskCompletionStatus = "processing" | "awaiting_user" | "completed";
+
+export interface ThinkLifeTaskState {
+  goal: string;
+  completion_status: ThinkLifeTaskCompletionStatus;
+  completed: string[];
+  remaining: string[];
+}
+
 export interface ThinkLifeTransaction {
   transaction_id: string;
   thread_id: string;
+  conversation_id?: string;
+  /** Compatibility projection only; use state/lifecycle_status for product decisions. */
   status: string;
+  state?: ThinkLifeTransactionState;
+  lifecycle_status?: ThinkLifeTransactionLifecycle;
+  pause_reason?: ThinkLifePauseReason | null;
+  revision?: number;
+  current_activation_id?: string | null;
+  deleted?: boolean;
   kind: string;
   priority: number;
   wm_entries: Record<string, unknown>[];
   wm_entry_count: number;
+  task_state?: ThinkLifeTaskState;
   think_rounds: number;
   delegate_count: number;
   active_delegate_id?: string | null;
   schedule_id?: string | null;
+  runtime_engine?: string;
   created_at: string;
   updated_at: string;
   terminal_at?: string | null;
+  deleted_at?: string | null;
   last_error?: string | null;
   is_active_user: boolean;
   is_cpu_holder: boolean;
@@ -128,10 +158,29 @@ export interface ThinkLifeTransaction {
 
 export interface ThinkLifeTransactionsResponse {
   thread_id: string;
+  conversation_id?: string | null;
   transactions: ThinkLifeTransaction[];
   active_transaction_id?: string | null;
   cpu_transaction_id?: string | null;
   transaction_count: number;
+  runtime_phase?: ThinkLifeRuntimePhase;
+  effective_depth?: number;
+}
+
+export interface ThinkLifeTransactionDeleteResponse {
+  success: boolean;
+  outcome?: string;
+  transaction?: ThinkLifeTransaction;
+  /** Compatibility fallback for servers that return the tombstone separately. */
+  tombstone?: Partial<ThinkLifeTransaction>;
+  cleanup?: Record<string, unknown>;
+  thread_id?: string;
+  conversation_id?: string | null;
+  active_transaction_id?: string | null;
+  cpu_transaction_id?: string | null;
+  replayed?: boolean;
+  already_deleted?: boolean;
+  [key: string]: unknown;
 }
 
 export interface HistoryRound {
