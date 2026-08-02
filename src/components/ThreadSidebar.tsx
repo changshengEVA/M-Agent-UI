@@ -7,11 +7,11 @@ import { TransactionCenter } from "./TransactionCenter";
 import { cn } from "../lib/utils";
 import type {
   SceneEntry,
-  ThinkLifeTransaction,
-  ThinkLifeTransactionDeleteResponse,
+  RuntimeTransaction,
+  RuntimeTransactionDeleteResponse,
   ThreadState,
 } from "../types/chat";
-import { isProductRuntimeProfile } from "../lib/thinkLifeRuntime";
+import { isProductRuntimeProfile } from "../lib/runtimeState";
 
 interface ThreadSidebarProps {
   threadState: ThreadState | null;
@@ -21,7 +21,7 @@ interface ThreadSidebarProps {
   onNewConversation: () => void;
   onOpenHistory: () => void;
   historyCount?: number;
-  transactions: ThinkLifeTransaction[];
+  transactions: RuntimeTransaction[];
   activeTransactionId?: string | null;
   cpuTransactionId?: string | null;
   sceneEntries?: SceneEntry[];
@@ -30,8 +30,8 @@ interface ThreadSidebarProps {
   transactionsUpdatedAt?: string | null;
   onRefreshTransactions?: () => void | Promise<void>;
   onDeleteTransaction?: (
-    transaction: ThinkLifeTransaction,
-  ) => Promise<ThinkLifeTransactionDeleteResponse | void>;
+    transaction: RuntimeTransaction,
+  ) => Promise<RuntimeTransactionDeleteResponse | void>;
   transactionResetToken?: string | number;
   isFlushing: boolean;
   flushStatus: string | null;
@@ -60,7 +60,7 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
   flushStatus,
   theme,
 }) => {
-  const isThinkLife = isProductRuntimeProfile(runtimeProfile);
+  const isProductRuntime = isProductRuntimeProfile(runtimeProfile);
   const vialCount = bufferVialCount ?? threadState?.pending_rounds ?? 0;
   const blockNewConversation =
     isFlushing || threadState === null || Boolean(threadState.has_pending_data);
@@ -138,8 +138,8 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
           isFlushing={isFlushing}
           flushStatus={flushStatus}
           theme={theme}
-          headerLabel={isThinkLife ? "Segment" : "Buffer"}
-          unitLabel={isThinkLife ? "Turns" : "Units"}
+          headerLabel={isProductRuntime ? "Segment" : "Buffer"}
+          unitLabel={isProductRuntime ? "Turns" : "Units"}
         />
 
         <div className="space-y-2">
@@ -150,8 +150,11 @@ export const ThreadSidebar: React.FC<ThreadSidebarProps> = ({
           <div className="grid grid-cols-3 gap-2">
             {[
               ["Rounds", threadState?.history_rounds || 0],
-              [isThinkLife ? "Segment" : "Pending", isThinkLife ? vialCount : threadState?.pending_rounds || 0],
-              ["Queue", threadState?.think_life?.pending_stimuli || 0],
+              [
+                isProductRuntime ? "Segment" : "Pending",
+                isProductRuntime ? vialCount : threadState?.pending_rounds || 0,
+              ],
+              ["Queue", threadState?.runtime?.pending_stimuli || 0],
             ].map(([label, value]) => (
               <div
                 key={String(label)}

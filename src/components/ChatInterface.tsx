@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Send, User, Bot, Loader2, Database, RefreshCw, Settings2, ShieldCheck, ShieldAlert, Sun, Moon, LogOut, CalendarClock, ScrollText, ImagePlus, X, Square } from "lucide-react";
-import { Message, ThreadState, ThinkLifeRuntimePhase } from "../types/chat";
+import { Message, RuntimePhase, ThreadState } from "../types/chat";
 import { cn } from "../lib/utils";
-import { thinkLifePhaseLabel, isProductRuntimeProfile } from "../lib/thinkLifeRuntime";
+import {
+  isProductRuntimeProfile,
+  runtimePhaseLabel,
+} from "../lib/runtimeState";
 import ReactMarkdown from "react-markdown";
 import { chatApi } from "../services/api";
 
@@ -72,7 +75,7 @@ interface ChatInterfaceProps {
   onSendMessage: (content: string) => void;
   isThinking: boolean;
   runtimeProfile?: string;
-  thinkLifePhase?: ThinkLifeRuntimePhase;
+  runtimePhase?: RuntimePhase;
   isFlushing: boolean;
   threadState: ThreadState | null;
   onFlush: () => void;
@@ -106,7 +109,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onSendMessage, 
   isThinking,
   runtimeProfile = "legacy",
-  thinkLifePhase = "ready",
+  runtimePhase = "ready",
   isFlushing,
   threadState,
   onFlush,
@@ -132,9 +135,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [input, setInput] = useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const isThinkLife = isProductRuntimeProfile(runtimeProfile);
+  const isProductRuntime = isProductRuntimeProfile(runtimeProfile);
   const isReadOnly = Boolean(readOnlyDialogueId);
-  const inputDisabled = isReadOnly || isFlushing || (!isThinkLife && isThinking);
+  const inputDisabled =
+    isReadOnly || isFlushing || (!isProductRuntime && isThinking);
   const canSend =
     (!!input.trim() || !!selectedImage) &&
     !inputDisabled;
@@ -192,22 +196,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {threadState?.mode === "manual" ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
                 Capture: {threadState?.mode?.toUpperCase() || "OFF"}
               </button>
-              {isThinkLife && (
+              {isProductRuntime && (
                 <span
                   className={cn(
                     "text-[10px] font-mono uppercase tracking-wider",
-                    thinkLifePhase === "busy"
+                    runtimePhase === "busy"
                       ? "text-amber-400"
-                      : thinkLifePhase === "processing"
+                      : runtimePhase === "processing"
                         ? "text-cyan-400"
                         : "text-emerald-500/80",
                   )}
                 >
-                  OS: {thinkLifePhaseLabel(thinkLifePhase)}
-                  {typeof threadState?.think_life?.effective_depth === "number"
-                    ? ` (depth=${threadState.think_life.effective_depth})`
-                    : threadState?.think_life?.pending_stimuli
-                      ? ` (inbox=${threadState.think_life.pending_stimuli})`
+                  OS: {runtimePhaseLabel(runtimePhase)}
+                  {typeof threadState?.runtime?.effective_depth === "number"
+                    ? ` (depth=${threadState.runtime.effective_depth})`
+                    : threadState?.runtime?.pending_stimuli
+                      ? ` (inbox=${threadState.runtime.pending_stimuli})`
                       : ""}
                 </span>
               )}
@@ -244,7 +248,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 isFlushing ? "opacity-50 cursor-not-allowed" : "hover:bg-amber-500/20"
               )}
               title={
-                isThinkLife
+                isProductRuntime
                   ? "结束当前 user 事务段并写入长期记忆（与 Scene 段对齐）"
                   : "将待写入对话缓冲刷新到长期记忆"
               }
@@ -252,7 +256,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               <RefreshCw className={cn("w-3 h-3", isFlushing && "animate-spin")} />
               {isFlushing
                 ? "FLUSHING..."
-                : isThinkLife
+                : isProductRuntime
                   ? `FLUSH SEGMENT (${threadState?.scene_pending_turns ?? 0})`
                   : `FLUSH BUFFER (${threadState?.pending_rounds ?? 0})`}
             </motion.button>
@@ -267,7 +271,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           >
             <CalendarClock className="w-4 h-4" />
           </button>
-          {onOpenScene && isThinkLife && (
+          {onOpenScene && isProductRuntime && (
             <button
               type="button"
               onClick={onOpenScene}
@@ -430,8 +434,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-cyan-500/40" />
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
                   <span className="text-xs font-mono text-cyan-500/70 animate-pulse uppercase tracking-widest">
-                    {isThinkLife
-                      ? thinkLifePhase === "busy"
+                    {isProductRuntime
+                      ? runtimePhase === "busy"
                         ? "Queue Backlog — Processing..."
                         : "Processing Neural Pathways..."
                       : "Processing Neural Pathways..."}

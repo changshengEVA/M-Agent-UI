@@ -14,8 +14,9 @@ import {
   SceneListResponse,
   StopThinkingResponse,
   StimulusSubmitResponse,
-  ThinkLifeTransactionsResponse,
-  ThinkLifeTransactionDeleteResponse,
+  RuntimeTransactionsResponse,
+  RuntimeTransactionDeleteResponse,
+  RuntimeFlushResponse,
   ThreadState,
   UploadImageResponse,
   UserConfigSchemaResponse,
@@ -216,7 +217,7 @@ export const chatApi = {
   async getTransactions(
     threadId: string,
     options?: { signal?: AbortSignal },
-  ): Promise<ThinkLifeTransactionsResponse> {
+  ): Promise<RuntimeTransactionsResponse> {
     const res = await fetch(
       `${API_BASE}/v1/chat/threads/${encodeURIComponent(threadId)}/transactions`,
       {
@@ -225,7 +226,7 @@ export const chatApi = {
         signal: options?.signal,
       },
     );
-    return parseJsonOrThrow<ThinkLifeTransactionsResponse>(res);
+    return parseJsonOrThrow<RuntimeTransactionsResponse>(res);
   },
 
   async deleteTransaction(
@@ -233,7 +234,7 @@ export const chatApi = {
     transactionId: string,
     expectedRevision: number,
     options?: { idempotencyKey?: string; signal?: AbortSignal },
-  ): Promise<ThinkLifeTransactionDeleteResponse> {
+  ): Promise<RuntimeTransactionDeleteResponse> {
     if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
       throw new Error("A valid transaction revision is required for deletion");
     }
@@ -256,7 +257,7 @@ export const chatApi = {
         signal: options?.signal,
       },
     );
-    return parseJsonOrThrow<ThinkLifeTransactionDeleteResponse>(res);
+    return parseJsonOrThrow<RuntimeTransactionDeleteResponse>(res);
   },
 
   async getScene(
@@ -412,7 +413,10 @@ export const chatApi = {
     return parseJsonOrThrow<any>(res);
   },
 
-  async flushBuffer(threadId: string, reason = "manual_api") {
+  async flushBuffer(
+    threadId: string,
+    reason = "manual_api",
+  ): Promise<RuntimeFlushResponse> {
     const safeThreadId = encodeURIComponent(String(threadId || "").trim());
     const res = await fetch(`${API_BASE}/v1/chat/threads/${safeThreadId}/memory/flush`, {
       method: "POST",
@@ -420,7 +424,7 @@ export const chatApi = {
       mode: "cors",
       body: JSON.stringify({ reason }),
     });
-    return parseJsonOrThrow<any>(res);
+    return parseJsonOrThrow<RuntimeFlushResponse>(res);
   },
 
   async stopThinking(threadId: string): Promise<StopThinkingResponse> {

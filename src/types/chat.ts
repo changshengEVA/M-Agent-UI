@@ -10,14 +10,14 @@ export interface WorkingMemoryState {
   entries?: Record<string, unknown>[];
 }
 
-export type ThinkLifeRuntimePhase = "ready" | "processing" | "busy";
+export type RuntimePhase = "ready" | "processing" | "busy";
 
-export interface ThreadThinkLifeState {
+export interface ThreadRuntimeState {
   pending_stimuli: number;
   busy: boolean;
   busy_reason: string;
   runtime_profile?: string;
-  runtime_phase?: ThinkLifeRuntimePhase;
+  runtime_phase?: RuntimePhase;
   effective_depth?: number;
   in_flight_stimulus_id?: string | null;
   preempt_enabled?: boolean;
@@ -43,7 +43,7 @@ export interface ThreadState {
   history_preview?: HistoryRound[];
   conversation_messages?: ConversationMessage[];
   working_memory?: WorkingMemoryState;
-  think_life?: ThreadThinkLifeState;
+  runtime?: ThreadRuntimeState;
 }
 
 export interface ConversationMessage {
@@ -79,7 +79,7 @@ export interface ThreadRuntimeStatus {
   drainer_active?: boolean;
   runtime_profile?: string;
   active_transaction_id?: string | null;
-  runtime_phase?: ThinkLifeRuntimePhase;
+  runtime_phase?: RuntimePhase;
   effective_depth?: number;
   in_flight_stimulus_id?: string | null;
   preempt_enabled?: boolean;
@@ -90,7 +90,7 @@ export interface StimulusSubmitResponse {
   thread_id: string;
   pending_count: number;
   accepted: boolean;
-  runtime_phase?: ThinkLifeRuntimePhase;
+  runtime_phase?: RuntimePhase;
   effective_depth?: number;
 }
 
@@ -106,34 +106,34 @@ export interface StopThinkingResponse {
   thread_runtime?: ThreadRuntimeStatus;
 }
 
-export type ThinkLifeTransactionState = "continue" | "pause" | "complete" | "archive";
+export type RuntimeTransactionState = "continue" | "pause" | "complete" | "archive";
 
-export type ThinkLifeTransactionLifecycle = "active" | "deleted";
+export type RuntimeTransactionLifecycle = "active" | "deleted";
 
-export type ThinkLifePauseReason =
+export type RuntimePauseReason =
   | "awaiting_user"
   | "scheduled_wait"
   | "manual_hold"
   | "runtime_error";
 
-export type ThinkLifeTaskCompletionStatus = "processing" | "awaiting_user" | "completed";
+export type RuntimeTaskCompletionStatus = "processing" | "awaiting_user" | "completed";
 
-export interface ThinkLifeTaskState {
+export interface RuntimeTaskState {
   goal: string;
-  completion_status: ThinkLifeTaskCompletionStatus;
+  completion_status: RuntimeTaskCompletionStatus;
   completed: string[];
   remaining: string[];
 }
 
-export interface ThinkLifeTransaction {
+export interface RuntimeTransaction {
   transaction_id: string;
   thread_id: string;
   conversation_id?: string;
   /** Compatibility projection only; use state/lifecycle_status for product decisions. */
   status: string;
-  state?: ThinkLifeTransactionState;
-  lifecycle_status?: ThinkLifeTransactionLifecycle;
-  pause_reason?: ThinkLifePauseReason | null;
+  state?: RuntimeTransactionState;
+  lifecycle_status?: RuntimeTransactionLifecycle;
+  pause_reason?: RuntimePauseReason | null;
   revision?: number;
   current_activation_id?: string | null;
   deleted?: boolean;
@@ -141,7 +141,7 @@ export interface ThinkLifeTransaction {
   priority: number;
   wm_entries: Record<string, unknown>[];
   wm_entry_count: number;
-  task_state?: ThinkLifeTaskState;
+  task_state?: RuntimeTaskState;
   think_rounds: number;
   delegate_count: number;
   active_delegate_id?: string | null;
@@ -156,23 +156,41 @@ export interface ThinkLifeTransaction {
   is_cpu_holder: boolean;
 }
 
-export interface ThinkLifeTransactionsResponse {
+export interface RuntimeTransactionsResponse {
+  operation?: "get_transactions";
   thread_id: string;
   conversation_id?: string | null;
-  transactions: ThinkLifeTransaction[];
+  transactions: RuntimeTransaction[];
   active_transaction_id?: string | null;
   cpu_transaction_id?: string | null;
   transaction_count: number;
-  runtime_phase?: ThinkLifeRuntimePhase;
+  runtime_phase?: RuntimePhase;
   effective_depth?: number;
 }
 
-export interface ThinkLifeTransactionDeleteResponse {
+export interface RuntimeFlushState {
+  flush_id?: string;
+  status?: string;
+  journal_status?: string;
+  completed_transaction_id?: string | null;
+  [key: string]: unknown;
+}
+
+export interface RuntimeFlushResponse {
+  success: boolean;
+  status?: string;
+  message?: string;
+  runtime_flush?: RuntimeFlushState | null;
+  thread_state?: ThreadState;
+  [key: string]: unknown;
+}
+
+export interface RuntimeTransactionDeleteResponse {
   success: boolean;
   outcome?: string;
-  transaction?: ThinkLifeTransaction;
+  transaction?: RuntimeTransaction;
   /** Compatibility fallback for servers that return the tombstone separately. */
-  tombstone?: Partial<ThinkLifeTransaction>;
+  tombstone?: Partial<RuntimeTransaction>;
   cleanup?: Record<string, unknown>;
   thread_id?: string;
   conversation_id?: string | null;

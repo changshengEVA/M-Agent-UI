@@ -51,7 +51,7 @@ const conversationToMessages = (messages: ConversationMessage[]): Message[] =>
 /**
  * Build the visible transcript from thread state.
  *
- * For product runtimes (think_life / langgraph), Scene-backed
+ * For the product Runtime, Scene-backed
  * ``conversation_messages`` is authoritative for the live unflushed segment.
  * Preferring incomplete ``history_rounds_data`` would drop in-flight user
  * utterances (and racing replies) until the round is captured.

@@ -2,13 +2,13 @@ import React from "react";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ThinkLifeTransaction } from "../types/chat";
+import type { RuntimeTransaction } from "../types/chat";
 import { TransactionCenter, TransactionDangerZone } from "./TransactionCenter";
 
 const transaction = (
   id: string,
-  overrides: Partial<ThinkLifeTransaction> = {},
-): ThinkLifeTransaction => ({
+  overrides: Partial<RuntimeTransaction> = {},
+): RuntimeTransaction => ({
   transaction_id: id,
   thread_id: "thread-demo",
   status: "running",
@@ -43,7 +43,7 @@ test("uses canonical state for the default Open filter", () => {
       ]}
       activeTransactionId={null}
       cpuTransactionId={null}
-      runtimeProfile="think_life_v1"
+      runtimeProfile="langgraph_v1"
       theme="dark"
     />,
   );
@@ -68,7 +68,7 @@ test("keeps active-user and CPU authority separate when CPU is explicitly idle",
       ]}
       activeTransactionId="active-user"
       cpuTransactionId={null}
-      runtimeProfile="think_life_v1"
+      runtimeProfile="langgraph_v1"
       theme="dark"
     />,
   );

@@ -25,11 +25,12 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import type {
+  RuntimeTransaction,
+  RuntimeTransactionDeleteResponse,
   SceneEntry,
-  ThinkLifeTransaction,
-  ThinkLifeTransactionDeleteResponse,
   WorkingMemoryState,
 } from "../types/chat";
+import { isProductRuntimeProfile } from "../lib/runtimeState";
 
 type Theme = "dark" | "light";
 type TransactionFilter = "open" | "paused" | "closed" | "all";
@@ -44,7 +45,7 @@ interface TaskStateProjection {
 }
 
 /** Fields added by the authoritative product transaction projection. */
-type TransactionProjection = ThinkLifeTransaction & {
+type TransactionProjection = RuntimeTransaction & {
   conversation_id?: string;
   state?: string;
   lifecycle_status?: string;
@@ -57,7 +58,7 @@ type TransactionProjection = ThinkLifeTransaction & {
 };
 
 export interface TransactionCenterProps {
-  transactions: ThinkLifeTransaction[];
+  transactions: RuntimeTransaction[];
   activeTransactionId?: string | null;
   cpuTransactionId?: string | null;
   sceneEntries?: SceneEntry[];
@@ -68,8 +69,8 @@ export interface TransactionCenterProps {
   lastUpdated?: string | number | Date | null;
   onRefresh?: () => void | Promise<void>;
   onDeleteTransaction?: (
-    transaction: ThinkLifeTransaction,
-  ) => Promise<ThinkLifeTransactionDeleteResponse | void>;
+    transaction: RuntimeTransaction,
+  ) => Promise<RuntimeTransactionDeleteResponse | void>;
   /** Changes after a flush to clear stale detail and confirmation state. */
   resetToken?: string | number;
   /** Thread-scoped WM used only by runtimes that do not expose transactions. */
@@ -365,11 +366,6 @@ const CopyButton: React.FC<{
       {copied ? <CheckCircle2 className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
     </button>
   );
-};
-
-const isProductRuntime = (profile: unknown): boolean => {
-  const value = normalize(profile);
-  return value.startsWith("think_life") || value.startsWith("langgraph");
 };
 
 const transactionGoal = (transaction: TransactionProjection): string =>
@@ -982,12 +978,12 @@ const cleanupValue = (value: unknown): string => {
 };
 
 export interface TransactionDangerZoneProps {
-  transaction: ThinkLifeTransaction;
+  transaction: RuntimeTransaction;
   theme: Theme;
   confirmOpen: boolean;
   deleting?: boolean;
   error?: string | null;
-  result?: ThinkLifeTransactionDeleteResponse | null;
+  result?: RuntimeTransactionDeleteResponse | null;
   onRequestDelete: () => void;
   onCancel: () => void;
   onConfirm: () => void;
@@ -1480,7 +1476,7 @@ export const TransactionCenter: React.FC<TransactionCenterProps> = ({
   activeTransactionId,
   cpuTransactionId,
   sceneEntries = [],
-  runtimeProfile = "think_life_v1",
+  runtimeProfile = "langgraph_v1",
   theme,
   loading = false,
   error = null,
@@ -1515,7 +1511,7 @@ export const TransactionCenter: React.FC<TransactionCenterProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteResult, setDeleteResult] =
-    useState<ThinkLifeTransactionDeleteResponse | null>(null);
+    useState<RuntimeTransactionDeleteResponse | null>(null);
   const previousResetTokenRef = useRef(resetToken);
 
   // `null` is an explicit idle/no-active signal; only `undefined` means that
@@ -1597,7 +1593,8 @@ export const TransactionCenter: React.FC<TransactionCenterProps> = ({
   const selected =
     sorted.find((transaction) => transaction.transaction_id === selectedId) ??
     null;
-  const showLegacy = !isProductRuntime(runtimeProfile) && sorted.length === 0;
+  const showLegacy =
+    !isProductRuntimeProfile(runtimeProfile) && sorted.length === 0;
 
   const openTransaction = (transaction: TransactionProjection) => {
     setSelectedId(transaction.transaction_id);

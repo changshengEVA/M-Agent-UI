@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/canonicalThread.test.ts src/lib/threadMessages.test.ts src/services/api.test.ts src/components/HistoryWindow.test.tsx src/components/TransactionCenter.test.tsx"
+    "test": "node --import tsx --test src/lib/canonicalThread.test.ts src/lib/runtimeState.test.ts src/lib/threadMessages.test.ts src/services/api.test.ts src/components/HistoryWindow.test.tsx src/components/TransactionCenter.test.tsx"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
